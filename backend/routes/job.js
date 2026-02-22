@@ -129,6 +129,92 @@ router.get('/my/posted', auth, async (req, res) => {
   }
 });
 
+router.post('/upload-resume', auth, upload.single('resume'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No resume file provided' });
+    }
+
+    const fileExt = path.extname(req.file.originalname).toLowerCase();
+    const fileType = fileExt === '.pdf' ? 'pdf' : fileExt === '.docx' ? 'docx' : null;
+
+    if (!fileType) {
+      return res.status(400).json({ error: 'Only PDF and DOCX files are supported' });
+    }
+
+    const parsedData = await parseResume(req.file.path, fileType);
+
+    let resumeUrl = `/uploads/${req.file.filename}`;
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY) {
+      const result = await uploadToCloudinary(req.file.path, 'resumes');
+      resumeUrl = result.url;
+    }
+
+    await User.findByIdAndUpdate(req.userId, {
+      resume: {
+        url: resumeUrl,
+        fileName: req.file.originalname,
+        parsedData: {
+          skills: parsedData.skills,
+          experience: parsedData.experience,
+          education: parsedData.education,
+          email: parsedData.email,
+          phone: parsedData.phone
+        },
+        uploadedAt: new Date()
+      }
+    });
+
+    res.json({
+      message: 'Resume uploaded and parsed successfully',
+      parsedData
+    });
+  } catch (error) {
+    console.error('Resume upload error:', error);
+    res.status(500).json({ error: 'Failed to upload resume', message: error.message });
+  }
+});
+
+router.get('/:jobId/matched-candidates', auth, async (req, res) => {
+  try {
+    const job = await Job.findById(req.params.jobId).populate('postedBy', 'name');
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.postedBy._id.toString() !== req.userId.toString()) {
+      return res.status(403).json({ error: 'Only job poster can view matched candidates' });
+    }
+
+    const applicantIds = job.applicants.map(app => app.user);
+    const candidates = await User.find({ _id: { $in: applicantIds } }).select('-password');
+
+    const matchedCandidates = await matchCandidatesWithJob(job, candidates);
+
+    res.json({ matchedCandidates });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get matched candidates', message: error.message });
+  }
+});
+
+router.get('/recommended', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    const userSkills = user.resume?.parsedData?.skills || user.skills || [];
+
+    const allJobs = await Job.find({ status: 'active' })
+      .populate('postedBy', 'name company profilePic');
+
+    const recommendations = await getJobRecommendations(userSkills, allJobs);
+
+    res.json({ recommendations });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get recommendations', message: error.message });
+  }
+});
+
+
 router.get('/my/applications', auth, async (req, res) => {
   try {
     const jobs = await Job.find({
