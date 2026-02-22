@@ -50,10 +50,54 @@ app.use((err, req, res, next) => {
 
 app.set('io', io);
 
+const connectedUsers = new Map();
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   
+  socket.on('user-connected', (userId) => {
+    connectedUsers.set(userId, socket.id);
+    console.log('User registered:', userId);
+  });
+
+  socket.on('send-message', async (data) => {
+    try {
+      const Message = require('./models/Message');
+      const message = new Message({
+        sender: data.sender || socket.userId,
+        receiver: data.receiver,
+        text: data.text
+      });
+      await message.save();
+      
+      const receiverSocketId = connectedUsers.get(data.receiver);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('receive-message', message);
+      }
+      socket.emit('message-sent', message);
+    } catch (error) {
+      console.error('Message error:', error);
+      socket.emit('message-error', { error: error.message });
+    }
+  });
+
+  socket.on('call-user', (data) => {
+    const receiverSocketId = connectedUsers.get(data.to);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit('incoming-call', {
+        from: data.from,
+        callType: data.callType
+      });
+    }
+  });
+  
   socket.on('disconnect', () => {
+    for (const [userId, socketId] of connectedUsers.entries()) {
+      if (socketId === socket.id) {
+        connectedUsers.delete(userId);
+        break;
+      }
+    }
     console.log('User disconnected:', socket.id);
   });
 });
