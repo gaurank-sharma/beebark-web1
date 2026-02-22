@@ -23,10 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017';
 const dbName = process.env.DB_NAME || 'social_network_db';
 
-mongoose.connect(`${mongoUrl}/${dbName}`, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect(`${mongoUrl}/${dbName}`)
 .then(() => console.log('MongoDB connected successfully'))
 .catch(err => console.error('MongoDB connection error:', err));
 
