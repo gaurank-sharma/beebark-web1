@@ -1,325 +1,242 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Navbar from '../components/Navbar';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import Sidebar from '../components/Sidebar';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
+import { Label } from '../components/ui/label';
+import { Card, CardContent } from '../components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
-import { useAuth } from '../context/AuthContext';
-import { FiVideo, FiMic, FiMicOff, FiVideoOff, FiMonitor, FiPhoneOff } from 'react-icons/fi';
-import Peer from 'peerjs';
+import { FiVideo, FiCalendar, FiClock, FiUsers, FiPlus } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
 
 const Meetings = () => {
-  const [meetingId, setMeetingId] = useState('');
-  const [inMeeting, setInMeeting] = useState(false);
-  const [participants, setParticipants] = useState([]);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const localVideoRef = useRef(null);
-  const peerRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const peersRef = useRef({});
-  const { user } = useAuth();
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [meetings, setMeetings] = useState([]);
+  const [scheduleData, setScheduleData] = useState({
+    title: '',
+    scheduledTime: '',
+    duration: '60',
+    participants: []
+  });
+  const navigate = useNavigate();
+  const API_URL = process.env.REACT_APP_BACKEND_URL;
 
-  const generateMeetingId = () => {
-    const id = Math.random().toString(36).substring(2, 10);
-    setMeetingId(id);
-    return id;
+  useEffect(() => {
+    fetchMeetings();
+  }, []);
+
+  const fetchMeetings = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/meetings/list`);
+      setMeetings(response.data.meetings || []);
+    } catch (error) {
+      console.error('Failed to load meetings');
+    }
   };
 
-  const startMeeting = async () => {
-    const id = meetingId || generateMeetingId();
-    await joinMeeting(id);
+  const handleStartMeeting = async () => {
+    try {
+      const response = await axios.post(`${API_URL}/api/meetings/create`, {
+        title: 'Instant Meeting',
+        scheduledTime: new Date()
+      });
+      toast.success('Meeting started!');
+      navigate(`/meeting-room/${response.data.meeting.meetingId}`);
+    } catch (error) {
+      toast.error('Failed to start meeting');
+    }
   };
 
-  const joinMeeting = async (id) => {
-    if (!id) {
-      toast.error('Please enter a meeting ID');
+  const handleScheduleMeeting = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API_URL}/api/meetings/create`, scheduleData);
+      toast.success('Meeting scheduled successfully!');
+      setShowScheduleModal(false);
+      fetchMeetings();
+      setScheduleData({ title: '', scheduledTime: '', duration: '60', participants: [] });
+    } catch (error) {
+      toast.error('Failed to schedule meeting');
+    }
+  };
+
+  const handleJoinMeeting = () => {
+    if (!joinCode.trim()) {
+      toast.error('Please enter a meeting code');
       return;
     }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
-
-      localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-
-      const peer = new Peer(user.id + '-' + id, {
-        host: '0.peerjs.com',
-        port: 443,
-        path: '/'
-      });
-
-      peerRef.current = peer;
-      setInMeeting(true);
-      setMeetingId(id);
-
-      peer.on('open', (peerId) => {
-        toast.success(`Joined meeting: ${id}`);
-      });
-
-      peer.on('call', (call) => {
-        call.answer(stream);
-        
-        call.on('stream', (remoteStream) => {
-          addParticipant(call.peer, remoteStream);
-        });
-
-        call.on('close', () => {
-          removeParticipant(call.peer);
-        });
-
-        peersRef.current[call.peer] = call;
-      });
-
-      peer.on('error', (error) => {
-        console.error('Peer error:', error);
-        toast.error('Connection error');
-      });
-
-    } catch (error) {
-      console.error('Failed to join meeting:', error);
-      toast.error('Failed to access media devices');
-    }
-  };
-
-  const addParticipant = (peerId, stream) => {
-    setParticipants(prev => {
-      if (prev.find(p => p.id === peerId)) return prev;
-      return [...prev, { id: peerId, stream }];
-    });
-  };
-
-  const removeParticipant = (peerId) => {
-    setParticipants(prev => prev.filter(p => p.id !== peerId));
-    if (peersRef.current[peerId]) {
-      delete peersRef.current[peerId];
-    }
-  };
-
-  const toggleAudio = () => {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsAudioEnabled(audioTrack.enabled);
-      }
-    }
-  };
-
-  const toggleVideo = () => {
-    if (localStreamRef.current) {
-      const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoEnabled(videoTrack.enabled);
-      }
-    }
-  };
-
-  const toggleScreenShare = async () => {
-    if (!isScreenSharing) {
-      try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: false
-        });
-
-        const screenTrack = screenStream.getVideoTracks()[0];
-        const currentVideoTrack = localStreamRef.current.getVideoTracks()[0];
-
-        Object.values(peersRef.current).forEach(call => {
-          const sender = call.peerConnection.getSenders().find(s => s.track.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(screenTrack);
-          }
-        });
-
-        screenTrack.onended = () => {
-          Object.values(peersRef.current).forEach(call => {
-            const sender = call.peerConnection.getSenders().find(s => s.track.kind === 'video');
-            if (sender) {
-              sender.replaceTrack(currentVideoTrack);
-            }
-          });
-          setIsScreenSharing(false);
-        };
-
-        setIsScreenSharing(true);
-      } catch (error) {
-        toast.error('Failed to share screen');
-      }
-    } else {
-      const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      Object.values(peersRef.current).forEach(call => {
-        const sender = call.peerConnection.getSenders().find(s => s.track.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        }
-      });
-      setIsScreenSharing(false);
-    }
-  };
-
-  const leaveMeeting = () => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-    }
-
-    Object.values(peersRef.current).forEach(call => call.close());
-    
-    if (peerRef.current) {
-      peerRef.current.destroy();
-    }
-
-    setInMeeting(false);
-    setParticipants([]);
-    setMeetingId('');
-    peersRef.current = {};
-  };
-
-  const copyMeetingLink = () => {
-    const link = `${window.location.origin}/meetings?id=${meetingId}`;
-    navigator.clipboard.writeText(link);
-    toast.success('Meeting link copied!');
+    navigate(`/meeting-room/${joinCode}`);
   };
 
   return (
-    <div className="min-h-screen bg-slate-900" data-testid="meetings-page">
-      <Navbar />
-      {!inMeeting ? (
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
-          <Card className="w-full max-w-md shadow-xl border-slate-200" data-testid="meeting-lobby">
-            <CardHeader className="text-center">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <FiVideo className="w-8 h-8 text-white" />
-              </div>
-              <CardTitle className="text-2xl text-slate-900">Video Meetings</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <Button
-                  onClick={() => startMeeting()}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                  data-testid="start-meeting-button"
-                >
-                  <FiVideo className="mr-2" /> Start New Meeting
-                </Button>
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-slate-300"></div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      <Sidebar />
+      <TopBar />
+      <div className="ml-64 mt-16 p-8">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <h1 className="text-4xl font-bold text-black mb-4">Professional Video Meetings</h1>
+            <p className="text-xl text-gray-600">for the Build Industry</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <Card className="shadow-xl border-2 border-gray-200 hover:shadow-2xl transition">
+              <CardContent className="pt-8 pb-8">
+                <div className="text-center">
+                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <FiVideo className="w-10 h-10 text-white" />
                   </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="bg-white px-2 text-slate-500">or</span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Input
-                    placeholder="Enter meeting ID"
-                    value={meetingId}
-                    onChange={(e) => setMeetingId(e.target.value)}
-                    className="border-slate-300"
-                    data-testid="meeting-id-input"
-                  />
-                  <Button
-                    onClick={() => joinMeeting(meetingId)}
-                    variant="outline"
-                    className="w-full"
-                    data-testid="join-meeting-button"
-                  >
-                    Join Meeting
+                  <h3 className="text-2xl font-bold text-black mb-4">Start a New Meeting</h3>
+                  <p className="text-gray-600 mb-6">Start an instant meeting now</p>
+                  <Button onClick={handleStartMeeting} className="w-full bg-black hover:bg-gray-900 text-white py-6 text-lg font-semibold">
+                    Start Meeting Now
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-xl border-2 border-yellow-400 hover:shadow-2xl transition">
+              <CardContent className="pt-8 pb-8">
+                <div className="text-center">
+                  <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <FiCalendar className="w-10 h-10 text-black" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-black mb-4">Schedule Meeting</h3>
+                  <p className="text-gray-600 mb-6">Plan a meeting for later</p>
+                  <Button onClick={() => setShowScheduleModal(true)} className="w-full bg-white hover:bg-gray-50 text-black border-2 border-yellow-400 py-6 text-lg font-semibold">
+                    Schedule for Later
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="shadow-xl border-2 border-gray-200 mb-8">
+            <CardContent className="pt-6 pb-6">
+              <h3 className="text-xl font-bold text-black mb-4">Join a Meeting</h3>
+              <div className="flex space-x-3">
+                <Input
+                  placeholder="Enter meeting code"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                  className="flex-1 text-lg border-2 border-gray-300"
+                />
+                <Button onClick={handleJoinMeeting} className="bg-blue-600 hover:bg-blue-700 text-white px-8">
+                  Join
+                </Button>
               </div>
             </CardContent>
           </Card>
-        </div>
-      ) : (
-        <div className="h-screen flex flex-col" data-testid="meeting-room">
-          <div className="bg-slate-800 text-white p-4 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-semibold">Meeting: {meetingId}</h2>
-              <p className="text-sm text-slate-300">{participants.length + 1} participant(s)</p>
-            </div>
-            <Button onClick={copyMeetingLink} variant="secondary" size="sm" data-testid="copy-link-button">
-              Copy Link
-            </Button>
-          </div>
 
-          <div className="flex-1 p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
-            <div className="relative bg-slate-800 rounded-lg overflow-hidden" data-testid="local-video">
-              <video
-                ref={localVideoRef}
-                autoPlay
-                muted
-                className="w-full h-64 object-cover"
-              />
-              <div className="absolute bottom-2 left-2 bg-slate-900/80 text-white px-3 py-1 rounded text-sm">
-                You {!isAudioEnabled && '(muted)'}
-              </div>
-            </div>
-
-            {participants.map((participant) => (
-              <div key={participant.id} className="relative bg-slate-800 rounded-lg overflow-hidden" data-testid={`participant-${participant.id}`}>
-                <video
-                  ref={(el) => {
-                    if (el && participant.stream) {
-                      el.srcObject = participant.stream;
-                    }
-                  }}
-                  autoPlay
-                  className="w-full h-64 object-cover"
-                />
-                <div className="absolute bottom-2 left-2 bg-slate-900/80 text-white px-3 py-1 rounded text-sm">
-                  Participant
+          {meetings.length > 0 && (
+            <Card className="shadow-xl">
+              <CardContent className="pt-6">
+                <h3 className="text-xl font-bold text-black mb-4">Upcoming Meetings</h3>
+                <div className="space-y-3">
+                  {meetings.map((meeting) => (
+                    <div key={meeting._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-yellow-400 rounded-lg flex items-center justify-center">
+                          <FiVideo className="w-6 h-6 text-black" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-black">{meeting.title}</p>
+                          <p className="text-sm text-gray-600">
+                            {new Date(meeting.scheduledTime).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button onClick={() => navigate(`/meeting-room/${meeting.meetingId}`)} size="sm" className="bg-black text-white">
+                        Join
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="bg-slate-800 p-4">
-            <div className="flex justify-center space-x-4">
-              <Button
-                onClick={toggleAudio}
-                size="lg"
-                className={isAudioEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-600 hover:bg-red-700'}
-                data-testid="toggle-audio-button"
-              >
-                {isAudioEnabled ? <FiMic className="w-6 h-6" /> : <FiMicOff className="w-6 h-6" />}
-              </Button>
-              <Button
-                onClick={toggleVideo}
-                size="lg"
-                className={isVideoEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-600 hover:bg-red-700'}
-                data-testid="toggle-video-button"
-              >
-                {isVideoEnabled ? <FiVideo className="w-6 h-6" /> : <FiVideoOff className="w-6 h-6" />}
-              </Button>
-              <Button
-                onClick={toggleScreenShare}
-                size="lg"
-                className={isScreenSharing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-600'}
-                data-testid="toggle-screen-share-button"
-              >
-                <FiMonitor className="w-6 h-6" />
-              </Button>
-              <Button
-                onClick={leaveMeeting}
-                size="lg"
-                className="bg-red-600 hover:bg-red-700"
-                data-testid="leave-meeting-button"
-              >
-                <FiPhoneOff className="w-6 h-6" />
-              </Button>
-            </div>
-          </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
-      )}
+      </div>
+
+      <Dialog open={showScheduleModal} onOpenChange={setShowScheduleModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Schedule a Meeting</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleScheduleMeeting} className="space-y-6 mt-4">
+            <div>
+              <Label className="text-base font-semibold mb-2">Meeting Title</Label>
+              <Input
+                value={scheduleData.title}
+                onChange={(e) => setScheduleData({ ...scheduleData, title: e.target.value })}
+                placeholder="Enter meeting title"
+                required
+                className="border-2 border-yellow-400 focus:ring-yellow-400"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-base font-semibold mb-2 flex items-center">
+                  <FiCalendar className="mr-2" /> Date
+                </Label>
+                <Input
+                  type="date"
+                  value={scheduleData.scheduledTime.split('T')[0]}
+                  onChange={(e) => setScheduleData({ ...scheduleData, scheduledTime: e.target.value + 'T10:00' })}
+                  required
+                  className="border-2 border-gray-300"
+                />
+              </div>
+              <div>
+                <Label className="text-base font-semibold mb-2 flex items-center">
+                  <FiClock className="mr-2" /> Time
+                </Label>
+                <Input
+                  type="time"
+                  required
+                  className="border-2 border-gray-300"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-base font-semibold mb-2">Duration</Label>
+              <Select value={scheduleData.duration} onValueChange={(value) => setScheduleData({ ...scheduleData, duration: value })}>
+                <SelectTrigger className="border-2 border-gray-300">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30 minutes</SelectItem>
+                  <SelectItem value="60">1 hour</SelectItem>
+                  <SelectItem value="90">1.5 hours</SelectItem>
+                  <SelectItem value="120">2 hours</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-base font-semibold mb-2 flex items-center">
+                <FiUsers className="mr-2" /> Invite Participants
+              </Label>
+              <div className="flex space-x-2">
+                <Input placeholder="Enter email addresses" className="flex-1 border-2 border-gray-300" />
+                <Button type="button" className="bg-yellow-400 hover:bg-yellow-500 text-black">
+                  <FiPlus className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+
+            <Button type="submit" className="w-full bg-black hover:bg-gray-900 text-white py-6 text-lg font-semibold">
+              Schedule Meeting
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
