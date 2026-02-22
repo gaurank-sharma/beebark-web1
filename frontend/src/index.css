@@ -5,12 +5,12 @@
 @tailwind utilities;
 
 :root {
-  --yellow-primary: #FFC107;
-  --yellow-light: #FFD54F;
-  --yellow-dark: #FFA000;
-  --black-primary: #1A1A1A;
-  --black-light: #2D2D2D;
-  --gray-bg: #F5F5F5;
+  --yellow-primary: #FFEB3B;
+  --yellow-hover: #FDD835;
+  --yellow-light: #FFF59D;
+  --black-primary: #000000;
+  --gray-bg: #FAFAFA;
+  --gray-text: #757575;
 }
 
 body {
@@ -19,7 +19,7 @@ body {
 }
 
 .sidebar-item {
-  @apply flex items-center space-x-3 px-6 py-3 text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer rounded-lg mx-2;
+  @apply flex items-center space-x-3 px-6 py-3 text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer rounded-lg mx-2;
 }
 
 .sidebar-item.active {
@@ -29,7 +29,19 @@ body {
 }
 
 .btn-yellow {
-  @apply bg-yellow-400 hover:bg-yellow-500 text-black font-semibold px-6 py-3 rounded-lg transition-all;
+  background: var(--yellow-primary);
+  color: var(--black-primary);
+  font-weight: 600;
+  padding: 12px 32px;
+  border-radius: 12px;
+  transition: all 0.3s;
+  border: none;
+}
+
+.btn-yellow:hover {
+  background: var(--yellow-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 235, 59, 0.4);
 }
 
 .btn-black {
@@ -37,14 +49,14 @@ body {
 }
 
 .card-yellow {
-  background: linear-gradient(135deg, #FFC107 0%, #FFD54F 100%);
+  background: var(--yellow-primary);
   border-radius: 16px;
   padding: 24px;
-  color: #1A1A1A;
+  color: var(--black-primary);
 }
 
 .input-beebark {
-  @apply w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent;
+  @apply w-full px-4 py-3 border-b-2 border-gray-300 focus:outline-none focus:border-yellow-400 bg-transparent;
 }
 
 .message-bubble {
@@ -52,22 +64,38 @@ body {
 }
 
 .message-sent {
-  @apply bg-yellow-400 text-black ml-auto;
+  background: var(--yellow-primary);
+  color: var(--black-primary);
+  margin-left: auto;
 }
 
 .message-received {
-  @apply bg-white text-black border border-slate-200;
-}
-
-.badge-pro {
-  background: linear-gradient(135deg, #FFD700, #FFA500);
-  @apply text-black font-bold text-xs px-2 py-1 rounded;
+  @apply bg-white text-black border border-gray-200;
 }
 
 .connection-card {
-  @apply bg-white rounded-xl border border-slate-200 hover:shadow-lg transition-shadow p-6;
+  @apply bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-shadow p-6;
 }
 
 .meeting-card {
-  @apply bg-white rounded-2xl shadow-sm border border-slate-200 p-8;
+  @apply bg-white rounded-2xl shadow-sm border border-gray-200 p-8;
+}
+
+.auth-yellow-btn {
+  background: #FFEB3B;
+  color: #000000;
+  font-weight: 600;
+  padding: 14px 32px;
+  border-radius: 12px;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-size: 16px;
+}
+
+.auth-yellow-btn:hover {
+  background: #FDD835;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(255, 235, 59, 0.5);
 }
