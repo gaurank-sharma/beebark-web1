@@ -16,24 +16,136 @@
 
 :root {
   --primary-yellow: #FFC107;
+  --primary-yellow-hover: #FFD54F;
   --primary-black: #1A1A1A;
   --gray-50: #F9FAFB;
   --gray-100: #F3F4F6;
   --gray-200: #E5E7EB;
   --gray-600: #4B5563;
   --gray-900: #111827;
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 47 100% 50%;
+  --primary-foreground: 210 40% 2%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 47 100% 50%;
+  --radius: 0.5rem;
 }
 
+/* BeeBark Yellow Theme */
 .yellow-gradient {
   background: linear-gradient(135deg, #FFC107 0%, #FFD54F 100%);
 }
 
-.sidebar-active {
-  background: var(--primary-yellow);
-  color: var(--primary-black);
-  font-weight: 600;
+.beebark-card {
+  @apply bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-2xl p-6 shadow-lg;
 }
 
+/* Sidebar Styles */
+.sidebar-item {
+  @apply flex items-center space-x-3 px-6 py-3 text-slate-600 hover:bg-slate-100 transition-colors duration-200;
+}
+
+.sidebar-item.active {
+  @apply bg-yellow-400 text-black font-semibold hover:bg-yellow-500;
+  border-right: 4px solid #1A1A1A;
+}
+
+.sidebar-item:hover {
+  @apply text-black;
+}
+
+/* Auth Page Styles */
+.input-beebark {
+  @apply w-full py-4 border-b-2 border-gray-200 bg-transparent focus:border-yellow-400 focus:outline-none transition-colors;
+}
+
+.auth-yellow-btn {
+  @apply w-full py-4 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold rounded-full transition-all duration-200 shadow-lg hover:shadow-xl;
+}
+
+/* Card Styles */
+.pro-match-badge {
+  @apply absolute top-4 left-4 bg-black text-white px-3 py-1 rounded-full text-xs font-bold;
+}
+
+/* Button Variants */
+.btn-yellow {
+  @apply bg-yellow-400 hover:bg-yellow-500 text-black font-semibold px-6 py-3 rounded-lg transition-all duration-200;
+}
+
+.btn-black {
+  @apply bg-black hover:bg-gray-900 text-white font-semibold px-6 py-3 rounded-lg transition-all duration-200;
+}
+
+.btn-outline {
+  @apply border-2 border-yellow-400 text-black hover:bg-yellow-50 font-semibold px-6 py-3 rounded-lg transition-all duration-200;
+}
+
+/* Tab Styles */
+.tab-active {
+  @apply border-b-2 border-yellow-400 text-black font-semibold;
+}
+
+/* Search Box */
+.search-box {
+  @apply bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus-within:border-yellow-400 transition-colors;
+}
+
+.search-box input {
+  @apply bg-transparent outline-none w-full;
+}
+
+/* Connection Card */
+.connection-card {
+  @apply bg-white rounded-xl border border-gray-200 p-4 hover:shadow-lg transition-shadow duration-200;
+}
+
+.connection-card-pro {
+  @apply bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-2xl p-6 shadow-lg relative overflow-hidden;
+}
+
+/* Message Bubbles */
+.message-sent {
+  @apply bg-yellow-400 text-black px-4 py-2 rounded-2xl max-w-md;
+}
+
+.message-received {
+  @apply bg-white border border-gray-200 text-black px-4 py-2 rounded-2xl max-w-md;
+}
+
+/* Status Badges */
+.badge-online {
+  @apply bg-green-500 text-white px-2 py-0.5 rounded-full text-xs;
+}
+
+.badge-offline {
+  @apply bg-gray-400 text-white px-2 py-0.5 rounded-full text-xs;
+}
+
+.badge-pro {
+  @apply bg-yellow-400 text-black px-2 py-0.5 rounded-full text-xs font-bold;
+}
+
+/* Loading Spinner */
+.spinner {
+  @apply animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400;
+}
+
+/* Utility Classes */
 @layer utilities {
   .line-clamp-2 {
     display: -webkit-box;
@@ -47,4 +159,61 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
+}
+
+/* Focus Styles */
+.focus-yellow:focus {
+  @apply outline-none ring-2 ring-yellow-400 ring-offset-2;
+}
+
+/* Meeting Card Styles */
+.meeting-card {
+  @apply bg-white rounded-xl border-2 border-gray-200 p-6 hover:border-yellow-400 hover:shadow-xl transition-all duration-300;
+}
+
+/* Job Card Styles */
+.job-card {
+  @apply bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-200;
+}
+
+.job-card-recommended {
+  @apply bg-white rounded-xl border-2 border-yellow-400 p-6 shadow-md hover:shadow-xl transition-all duration-200;
+}
+
+/* Avatar Ring for Stories */
+.story-ring {
+  @apply ring-2 ring-yellow-400 ring-offset-2;
+}
+
+/* Glass Effect */
+.glass {
+  @apply bg-white/80 backdrop-blur-md;
 }
