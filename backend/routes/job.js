@@ -3,6 +3,11 @@ const router = express.Router();
 const Job = require('../models/Job');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const { upload, uploadToCloudinary } = require('../config/cloudinary');
+const { parseResume } = require('../utils/resumeParser');
+const { matchCandidatesWithJob, getJobRecommendations } = require('../utils/jobMatcher');
+const path = require('path');
+const fs = require('fs');
 
 router.post('/create', auth, async (req, res) => {
   try {
