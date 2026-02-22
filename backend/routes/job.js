@@ -69,6 +69,23 @@ router.get('/list', auth, async (req, res) => {
   }
 });
 
+// IMPORTANT: /recommended route moved BEFORE /:jobId to avoid route collision
+router.get('/recommended', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    const userSkills = user.resume?.parsedData?.skills || user.skills || [];
+
+    const allJobs = await Job.find({ status: 'active' })
+      .populate('postedBy', 'name company profilePic');
+
+    const recommendations = await getJobRecommendations(userSkills, allJobs);
+
+    res.json({ recommendations });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get recommendations', message: error.message });
+  }
+});
+
 router.get('/:jobId', auth, async (req, res) => {
   try {
     const job = await Job.findById(req.params.jobId)
