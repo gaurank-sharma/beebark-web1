@@ -36,12 +36,14 @@ const profileRoutes = require('./routes/profile');
 const postRoutes = require('./routes/post');
 const connectionRoutes = require('./routes/connection');
 const jobRoutes = require('./routes/job');
+const messageRoutes = require('./routes/message');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/connections', connectionRoutes);
 app.use('/api/jobs', jobRoutes);
+app.use('/api/messages', messageRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
