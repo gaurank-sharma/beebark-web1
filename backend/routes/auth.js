@@ -35,7 +35,7 @@ router.post('/register', [
 
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET || 'your-secret-key-change-this',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -80,7 +80,7 @@ router.post('/login', [
 
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET || 'your-secret-key-change-this',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
