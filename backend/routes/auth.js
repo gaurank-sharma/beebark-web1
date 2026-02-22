@@ -24,8 +24,20 @@ router.post('/register', [
       return res.status(400).json({ error: 'Email already registered' });
     }
 
+    // Auto-generate username from email
+    let baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+    let username = baseUsername;
+    let counter = 1;
+    
+    // Check if username exists and add number if needed
+    while (await User.findOne({ username })) {
+      username = `${baseUsername}${counter}`;
+      counter++;
+    }
+
     const user = new User({
       name,
+      username,
       email,
       password,
       role: role || 'user'
@@ -45,6 +57,7 @@ router.post('/register', [
       user: {
         id: user._id,
         name: user.name,
+        username: user.username,
         email: user.email,
         role: user.role,
         profilePic: user.profilePic
@@ -90,6 +103,7 @@ router.post('/login', [
       user: {
         id: user._id,
         name: user.name,
+        username: user.username,
         email: user.email,
         role: user.role,
         profilePic: user.profilePic
