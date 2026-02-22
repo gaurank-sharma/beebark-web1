@@ -3,6 +3,59 @@ const router = express.Router();
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
+// Get connection suggestions
+router.get('/suggestions', auth, async (req, res) => {
+  try {
+    const { getConnectionSuggestions } = require('../utils/recommendationEngine');
+    const suggestions = await getConnectionSuggestions(req.userId, 10);
+    res.json({ suggestions });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch suggestions', message: error.message });
+  }
+});
+
+// Search users by name, username, or email
+router.get('/search', auth, async (req, res) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query || query.length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    }
+
+    const currentUser = await User.findById(req.userId);
+    const connectionIds = currentUser.connections.map(id => id.toString());
+    const sentRequestIds = (currentUser.sentRequests || []).map(id => id.toString());
+
+    const users = await User.find({
+      $and: [
+        { _id: { $ne: req.userId } },
+        {
+          $or: [
+            { name: { $regex: query, $options: 'i' } },
+            { username: { $regex: query, $options: 'i' } },
+            { email: { $regex: query, $options: 'i' } }
+          ]
+        }
+      ]
+    })
+    .select('name username email profilePic bio role')
+    .limit(20);
+
+    // Add connection status to each user
+    const usersWithStatus = users.map(user => ({
+      ...user.toObject(),
+      isConnected: connectionIds.includes(user._id.toString()),
+      requestSent: sentRequestIds.includes(user._id.toString())
+    }));
+
+    res.json({ users: usersWithStatus });
+  } catch (error) {
+    res.status(500).json({ error: 'Search failed', message: error.message });
+  }
+});
+
+// Send connection request
 router.post('/send-request/:targetUserId', auth, async (req, res) => {
   try {
     const { targetUserId } = req.params;
@@ -38,6 +91,7 @@ router.post('/send-request/:targetUserId', auth, async (req, res) => {
   }
 });
 
+// Accept connection request
 router.post('/accept-request/:requesterId', auth, async (req, res) => {
   try {
     const { requesterId } = req.params;
@@ -72,6 +126,7 @@ router.post('/accept-request/:requesterId', auth, async (req, res) => {
   }
 });
 
+// Reject connection request
 router.post('/reject-request/:requesterId', auth, async (req, res) => {
   try {
     const { requesterId } = req.params;
@@ -82,17 +137,6 @@ router.post('/reject-request/:requesterId', auth, async (req, res) => {
     if (!requester) {
       return res.status(404).json({ error: 'User not found' });
     }
-
-
-router.get('/suggestions', auth, async (req, res) => {
-  try {
-    const { getConnectionSuggestions } = require('../utils/recommendationEngine');
-    const suggestions = await getConnectionSuggestions(req.userId, 10);
-    res.json({ suggestions });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch suggestions', message: error.message });
-  }
-});
 
     currentUser.pendingRequests = currentUser.pendingRequests.filter(
       id => id.toString() !== requesterId
@@ -110,10 +154,11 @@ router.get('/suggestions', auth, async (req, res) => {
   }
 });
 
+// Get pending requests
 router.get('/pending', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId)
-      .populate('pendingRequests', 'name email profilePic bio');
+      .populate('pendingRequests', 'name username email profilePic bio');
     
     res.json({ requests: user.pendingRequests });
   } catch (error) {
@@ -121,14 +166,43 @@ router.get('/pending', auth, async (req, res) => {
   }
 });
 
+// Get connections list
 router.get('/list', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId)
-      .populate('connections', 'name email profilePic bio role');
+      .populate('connections', 'name username email profilePic bio role');
     
     res.json({ connections: user.connections });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch connections', message: error.message });
+  }
+});
+
+// Remove connection
+router.delete('/remove/:connectionId', auth, async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+
+    const currentUser = await User.findById(req.userId);
+    const connectionUser = await User.findById(connectionId);
+
+    if (!connectionUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    currentUser.connections = currentUser.connections.filter(
+      id => id.toString() !== connectionId
+    );
+    connectionUser.connections = connectionUser.connections.filter(
+      id => id.toString() !== req.userId.toString()
+    );
+
+    await currentUser.save();
+    await connectionUser.save();
+
+    res.json({ message: 'Connection removed' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to remove connection', message: error.message });
   }
 });
 
