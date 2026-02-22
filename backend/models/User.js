@@ -52,6 +52,18 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'recruiter'],
     default: 'user'
   },
+  resume: {
+    url: String,
+    fileName: String,
+    parsedData: {
+      skills: [String],
+      experience: mongoose.Schema.Types.Mixed,
+      education: [String],
+      email: String,
+      phone: String
+    },
+    uploadedAt: Date
+  },
   resetPasswordToken: String,
   resetPasswordExpires: Date
 }, {
