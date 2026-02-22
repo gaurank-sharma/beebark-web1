@@ -122,7 +122,7 @@ router.post('/forgot-password', [
     user.resetPasswordExpires = Date.now() + 3600000;
     await user.save();
 
-    const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+    const resetUrl = `${process.env.APP_URL}/reset-password/${resetToken}`;
     
     await sendPasswordResetEmail(user.email, resetUrl);
 
