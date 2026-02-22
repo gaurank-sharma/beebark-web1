@@ -1,39 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Navbar from '../components/Navbar';
+import Sidebar from '../components/Sidebar';
+import TopBar from '../components/TopBar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
-import { FiPlus, FiBriefcase, FiMapPin, FiDollarSign } from 'react-icons/fi';
+import { FiUpload, FiBriefcase, FiMapPin, FiDollarSign, FiFileText, FiAward } from 'react-icons/fi';
 
 const Jobs = () => {
   const [jobs, setJobs] = useState([]);
+  const [recommendedJobs, setRecommendedJobs] = useState([]);
+  const [myApplications, setMyApplications] = useState([]);
   const [myJobs, setMyJobs] = useState([]);
-  const [applications, setApplications] = useState([]);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    company: '',
-    location: '',
-    salary: ''
-  });
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [matchedCandidates, setMatchedCandidates] = useState([]);
+  const [showPostDialog, setShowPostDialog] = useState(false);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [formData, setFormData] = useState({ title: '', description: '', company: '', location: '', salary: '' });
   const { user } = useAuth();
   const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   useEffect(() => {
     fetchJobs();
+    fetchRecommendedJobs();
     fetchMyApplications();
-    if (user?.role === 'recruiter') {
-      fetchMyPostedJobs();
-    }
+    if (user?.role === 'recruiter') fetchMyPostedJobs();
   }, [user]);
 
   const fetchJobs = async () => {
@@ -41,39 +40,64 @@ const Jobs = () => {
       const response = await axios.get(`${API_URL}/api/jobs/list`);
       setJobs(response.data.jobs);
     } catch (error) {
-      toast.error('Failed to load jobs');
+      console.error('Failed to load jobs');
     }
   };
 
-  const fetchMyPostedJobs = async () => {
+  const fetchRecommendedJobs = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/jobs/my/posted`);
-      setMyJobs(response.data.jobs);
+      const response = await axios.get(`${API_URL}/api/jobs/recommended`);
+      setRecommendedJobs(response.data.recommendations || []);
     } catch (error) {
-      console.error('Failed to load posted jobs');
+      console.error('Failed to load recommendations');
     }
   };
 
   const fetchMyApplications = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/jobs/my/applications`);
-      setApplications(response.data.applications);
+      setMyApplications(response.data.applications || []);
     } catch (error) {
       console.error('Failed to load applications');
     }
   };
 
-  const handlePostJob = async (e) => {
-    e.preventDefault();
+  const fetchMyPostedJobs = async () => {
     try {
-      await axios.post(`${API_URL}/api/jobs/create`, formData);
-      toast.success('Job posted successfully!');
-      setOpenDialog(false);
-      setFormData({ title: '', description: '', company: '', location: '', salary: '' });
-      fetchJobs();
-      fetchMyPostedJobs();
+      const response = await axios.get(`${API_URL}/api/jobs/my/posted`);
+      setMyJobs(response.data.jobs || []);
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to post job');
+      console.error('Failed to load posted jobs');
+    }
+  };
+
+  const fetchMatchedCandidates = async (jobId) => {
+    try {
+      const response = await axios.get(`${API_URL}/api/jobs/${jobId}/matched-candidates`);
+      setMatchedCandidates(response.data.matchedCandidates || []);
+    } catch (error) {
+      toast.error('Failed to load matched candidates');
+    }
+  };
+
+  const handleUploadResume = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('resume', file);
+    setUploadingResume(true);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/jobs/upload-resume`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Resume uploaded and parsed successfully!');
+      fetchRecommendedJobs();
+    } catch (error) {
+      toast.error('Failed to upload resume');
+    } finally {
+      setUploadingResume(false);
     }
   };
 
@@ -87,203 +111,295 @@ const Jobs = () => {
     }
   };
 
+  const handlePostJob = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API_URL}/api/jobs/create`, formData);
+      toast.success('Job posted successfully!');
+      setShowPostDialog(false);
+      fetchJobs();
+      fetchMyPostedJobs();
+      setFormData({ title: '', description: '', company: '', location: '', salary: '' });
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to post job');
+    }
+  };
+
+  const getMatchColor = (score) => {
+    if (score >= 90) return 'bg-green-500';
+    if (score >= 75) return 'bg-yellow-400';
+    if (score >= 60) return 'bg-orange-500';
+    return 'bg-gray-400';
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50" data-testid="jobs-page">
-      <Navbar />
-      <div className="max-w-7xl mx-auto py-8 px-4">
+    <div className="min-h-screen bg-gray-50">
+      <Sidebar />
+      <TopBar />
+      <div className="ml-64 mt-16 p-8">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">Job Board</h1>
-          {user?.role === 'recruiter' && (
-            <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-              <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-700" data-testid="post-job-button">
-                  <FiPlus className="mr-2" /> Post Job
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Post a New Job</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handlePostJob} className="space-y-4" data-testid="post-job-form">
-                  <div className="space-y-2">
-                    <Label>Job Title</Label>
-                    <Input
-                      value={formData.title}
-                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                      required
-                      data-testid="job-title-input"
-                      className="border-slate-300"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Company</Label>
-                    <Input
-                      value={formData.company}
-                      onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                      required
-                      data-testid="job-company-input"
-                      className="border-slate-300"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Location</Label>
-                      <Input
-                        value={formData.location}
-                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                        data-testid="job-location-input"
-                        className="border-slate-300"
-                      />
+          <div>
+            <h1 className="text-3xl font-bold text-black mb-2">Job Portal</h1>
+            <p className="text-gray-600">AI-powered job matching for professionals</p>
+          </div>
+          <div className="flex space-x-3">
+            {user?.role !== 'recruiter' && (
+              <label className="cursor-pointer">
+                <input type="file" accept=".pdf,.docx" onChange={handleUploadResume} className="hidden" />
+                <div className="flex items-center space-x-2 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold px-6 py-3 rounded-lg transition">
+                  <FiUpload className="w-5 h-5" />
+                  <span>{uploadingResume ? 'Uploading...' : 'Upload Resume'}</span>
+                </div>
+              </label>
+            )}
+            {user?.role === 'recruiter' && (
+              <Dialog open={showPostDialog} onOpenChange={setShowPostDialog}>
+                <DialogTrigger asChild>
+                  <Button className="bg-black hover:bg-gray-900 text-white">Post Job</Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Post a New Job</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handlePostJob} className="space-y-4 mt-4">
+                    <div>
+                      <Label>Job Title</Label>
+                      <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Salary</Label>
-                      <Input
-                        value={formData.salary}
-                        onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
-                        placeholder="e.g. $80k-100k"
-                        data-testid="job-salary-input"
-                        className="border-slate-300"
-                      />
+                    <div>
+                      <Label>Company</Label>
+                      <Input value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} required />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Job Description</Label>
-                    <Textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      required
-                      className="min-h-32 border-slate-300"
-                      data-testid="job-description-input"
-                    />
-                  </div>
-                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" data-testid="submit-job-button">
-                    Post Job
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Location</Label>
+                        <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
+                      </div>
+                      <div>
+                        <Label>Salary</Label>
+                        <Input value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: e.target.value })} placeholder="$80k-100k" />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Job Description</Label>
+                      <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} required className="min-h-32" />
+                    </div>
+                    <Button type="submit" className="w-full bg-black text-white">Post Job</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
         </div>
 
         <Tabs defaultValue="browse" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="browse" data-testid="browse-tab">Browse Jobs</TabsTrigger>
-            <TabsTrigger value="applied" data-testid="applied-tab">My Applications</TabsTrigger>
-            {user?.role === 'recruiter' && (
-              <TabsTrigger value="posted" data-testid="posted-tab">Posted Jobs</TabsTrigger>
-            )}
+          <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsTrigger value="browse">Browse Jobs</TabsTrigger>
+            <TabsTrigger value="recommended">Recommended ({recommendedJobs.length})</TabsTrigger>
+            <TabsTrigger value="applied">My Applications ({myApplications.length})</TabsTrigger>
+            {user?.role === 'recruiter' && <TabsTrigger value="posted">Posted Jobs ({myJobs.length})</TabsTrigger>}
           </TabsList>
 
-          <TabsContent value="browse" data-testid="browse-jobs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <TabsContent value="browse">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {jobs.map((job) => (
-                <Card key={job._id} className="shadow-md border-slate-200" data-testid={`job-${job._id}`}>
-                  <CardHeader>
-                    <CardTitle className="text-xl text-slate-900">{job.title}</CardTitle>
-                    <div className="space-y-1 mt-2">
-                      <div className="flex items-center text-slate-600 text-sm">
-                        <FiBriefcase className="mr-2" />
-                        {job.company}
+                <Card key={job._id} className="shadow-md hover:shadow-xl transition">
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <FiBriefcase className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-black">{job.title}</h3>
+                          <p className="text-sm text-gray-600">{job.company}</p>
+                        </div>
                       </div>
+                      <Badge className="bg-green-500 text-white">Active</Badge>
+                    </div>
+                    <div className="space-y-2 mb-4">
                       {job.location && (
-                        <div className="flex items-center text-slate-600 text-sm">
-                          <FiMapPin className="mr-2" />
-                          {job.location}
+                        <div className="flex items-center text-sm text-gray-600">
+                          <FiMapPin className="mr-2" />{job.location}
                         </div>
                       )}
                       {job.salary && (
-                        <div className="flex items-center text-slate-600 text-sm">
-                          <FiDollarSign className="mr-2" />
-                          {job.salary}
+                        <div className="flex items-center text-sm text-gray-600">
+                          <FiDollarSign className="mr-2" />{job.salary}
                         </div>
                       )}
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-slate-700 line-clamp-3">{job.description}</p>
-                    <Badge className="mt-3 bg-blue-600">Active</Badge>
-                  </CardContent>
-                  <CardFooter>
-                    <Button
-                      onClick={() => handleApply(job._id)}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
-                      data-testid={`apply-${job._id}`}
-                    >
+                    <p className="text-gray-700 line-clamp-3 mb-4">{job.description}</p>
+                    <Button onClick={() => handleApply(job._id)} className="w-full bg-black hover:bg-gray-900 text-white">
                       Apply Now
                     </Button>
-                  </CardFooter>
+                  </CardContent>
                 </Card>
               ))}
             </div>
-            {jobs.length === 0 && (
-              <div className="text-center py-12 text-slate-500">
-                <p>No jobs available at the moment</p>
-              </div>
-            )}
           </TabsContent>
 
-          <TabsContent value="applied" data-testid="my-applications">
-            <div className="space-y-4">
-              {applications.map((app, idx) => (
-                <Card key={idx} className="shadow-md border-slate-200">
-                  <CardHeader>
-                    <CardTitle className="text-xl text-slate-900">{app.job.title}</CardTitle>
-                    <div className="flex items-center text-slate-600 text-sm mt-2">
-                      <FiBriefcase className="mr-2" />
-                      {app.job.company}
+          <TabsContent value="recommended">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {recommendedJobs.map((job) => (
+                <Card key={job._id} className="shadow-md border-2 border-yellow-400 hover:shadow-xl transition">
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                          <FiAward className="w-6 h-6 text-yellow-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-black">{job.title}</h3>
+                          <p className="text-sm text-gray-600">{job.company}</p>
+                        </div>
+                      </div>
+                      <div className={`${getMatchColor(job.matchScore)} text-white px-3 py-1 rounded-full font-bold text-sm`}>
+                        {job.matchScore}% AI Match
+                      </div>
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-slate-600">
-                        Applied on {new Date(app.appliedAt).toLocaleDateString()}
-                      </p>
-                      <Badge className={app.status === 'pending' ? 'bg-yellow-500' : 'bg-green-600'}>
-                        {app.status}
-                      </Badge>
+                    {job.matchedSkills?.length > 0 && (
+                      <div className="mb-4">
+                        <p className="text-xs text-gray-600 mb-2">Matched Skills:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {job.matchedSkills.slice(0, 5).map((skill, idx) => (
+                            <Badge key={idx} className="bg-yellow-100 text-black">{skill}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-2 mb-4">
+                      {job.location && (
+                        <div className="flex items-center text-sm text-gray-600">
+                          <FiMapPin className="mr-2" />{job.location}
+                        </div>
+                      )}
+                      {job.salary && (
+                        <div className="flex items-center text-sm text-gray-600">
+                          <FiDollarSign className="mr-2" />{job.salary}
+                        </div>
+                      )}
                     </div>
+                    <p className="text-gray-700 line-clamp-3 mb-4">{job.description}</p>
+                    <Button onClick={() => handleApply(job._id)} className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-semibold">
+                      Quick Apply
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
-              {applications.length === 0 && (
-                <div className="text-center py-12 text-slate-500">
-                  <p>You haven't applied to any jobs yet</p>
+              {recommendedJobs.length === 0 && (
+                <div className="col-span-2 text-center py-12">
+                  <FiFileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                  <p className="text-gray-500">Upload your resume to get AI-powered job recommendations</p>
                 </div>
               )}
             </div>
           </TabsContent>
 
+          <TabsContent value="applied">
+            <div className="space-y-4">
+              {myApplications.map((app, idx) => (
+                <Card key={idx} className="shadow-md">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <FiBriefcase className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-black">{app.job.title}</h3>
+                          <p className="text-sm text-gray-600">{app.job.company}</p>
+                          <p className="text-xs text-gray-500 mt-1">Applied on {new Date(app.appliedAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <Badge className={app.status === 'pending' ? 'bg-yellow-500' : 'bg-green-500'}>{app.status}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              {myApplications.length === 0 && (
+                <div className="text-center py-12 text-gray-500">No applications yet</div>
+              )}
+            </div>
+          </TabsContent>
+
           {user?.role === 'recruiter' && (
-            <TabsContent value="posted" data-testid="posted-jobs">
-              <div className="space-y-4">
+            <TabsContent value="posted">
+              <div className="space-y-6">
                 {myJobs.map((job) => (
-                  <Card key={job._id} className="shadow-md border-slate-200">
+                  <Card key={job._id} className="shadow-md">
                     <CardHeader>
-                      <CardTitle className="text-xl text-slate-900">{job.title}</CardTitle>
-                      <div className="flex items-center text-slate-600 text-sm mt-2">
-                        <FiBriefcase className="mr-2" />
-                        {job.company}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-xl">{job.title}</CardTitle>
+                          <p className="text-sm text-gray-600">{job.company}</p>
+                        </div>
+                        <Button onClick={() => { setSelectedJob(job); fetchMatchedCandidates(job._id); }} className="bg-yellow-400 hover:bg-yellow-500 text-black">
+                          View Top 10 Matches
+                        </Button>
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-slate-700 mb-4">{job.description}</p>
+                      <p className="text-gray-700 mb-4">{job.description}</p>
                       <div className="flex items-center justify-between">
-                        <p className="text-sm text-slate-600">
-                          <strong>{job.applicants.length}</strong> applicants
-                        </p>
-                        <Badge className={job.status === 'active' ? 'bg-blue-600' : 'bg-slate-600'}>
-                          {job.status}
-                        </Badge>
+                        <p className="text-sm text-gray-600"><strong>{job.applicants.length}</strong> applicants</p>
+                        <Badge className={job.status === 'active' ? 'bg-green-500' : 'bg-gray-500'}>{job.status}</Badge>
                       </div>
                     </CardContent>
                   </Card>
                 ))}
-                {myJobs.length === 0 && (
-                  <div className="text-center py-12 text-slate-500">
-                    <p>You haven't posted any jobs yet</p>
-                  </div>
-                )}
               </div>
+
+              {selectedJob && matchedCandidates.length > 0 && (
+                <Dialog open={!!selectedJob} onOpenChange={() => setSelectedJob(null)}>
+                  <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Top 10 AI-Matched Candidates for {selectedJob.title}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-4">
+                      {matchedCandidates.map((candidate, idx) => (
+                        <Card key={candidate._id} className="border-2 border-gray-200">
+                          <CardContent className="pt-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center space-x-4">
+                                <div className="text-center">
+                                  <div className="w-12 h-12 bg-yellow-400 rounded-full flex items-center justify-center font-bold text-xl text-black">
+                                    #{idx + 1}
+                                  </div>
+                                </div>
+                                <Avatar className="w-16 h-16">
+                                  <AvatarImage src={candidate.profilePic} />
+                                  <AvatarFallback className="bg-gray-300 text-xl">{candidate.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <h3 className="text-lg font-bold text-black">{candidate.name}</h3>
+                                  <p className="text-sm text-gray-600">{candidate.email}</p>
+                                  {candidate.resume?.parsedData?.experience?.years && (
+                                    <p className="text-xs text-gray-500">{candidate.resume.parsedData.experience.years} years experience</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className={`${getMatchColor(candidate.matchScore)} text-white px-4 py-2 rounded-lg font-bold text-lg`}>
+                                {candidate.matchScore}% Match
+                              </div>
+                            </div>
+                            {candidate.matchedSkills?.length > 0 && (
+                              <div className="mt-4">
+                                <p className="text-xs text-gray-600 mb-2">Matched Skills:</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {candidate.matchedSkills.map((skill, idx) => (
+                                    <Badge key={idx} className="bg-green-100 text-green-800">{skill}</Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
             </TabsContent>
           )}
         </Tabs>
