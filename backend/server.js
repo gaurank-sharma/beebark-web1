@@ -37,6 +37,8 @@ const postRoutes = require('./routes/post');
 const connectionRoutes = require('./routes/connection');
 const jobRoutes = require('./routes/job');
 const messageRoutes = require('./routes/message');
+const uploadRoutes = require('./routes/upload');
+const meetingRoutes = require('./routes/meeting');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
@@ -44,6 +46,8 @@ app.use('/api/posts', postRoutes);
 app.use('/api/connections', connectionRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/meetings', meetingRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
