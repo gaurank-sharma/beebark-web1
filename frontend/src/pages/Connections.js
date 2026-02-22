@@ -8,11 +8,18 @@ import { FiUserPlus } from 'react-icons/fi';
 
 const Connections = () => {
   const [suggestions, setSuggestions] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [connections, setConnections] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
   const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   useEffect(() => {
     fetchSuggestions();
+    fetchConnections();
+    fetchPendingRequests();
   }, []);
 
   const fetchSuggestions = async () => {
@@ -26,13 +33,69 @@ const Connections = () => {
     }
   };
 
+  const fetchConnections = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/connections/list`);
+      setConnections(response.data.connections || []);
+    } catch (error) {
+      console.error('Failed to load connections');
+    }
+  };
+
+  const fetchPendingRequests = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/connections/pending`);
+      setPendingRequests(response.data.requests || []);
+    } catch (error) {
+      console.error('Failed to load pending requests');
+    }
+  };
+
+  const handleSearch = async () => {
+    if (searchQuery.length < 2) {
+      toast.error('Search query too short');
+      return;
+    }
+    setSearching(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/profile/search/users?query=${searchQuery}`);
+      setSearchResults(response.data.users);
+    } catch (error) {
+      toast.error('Search failed');
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const handleConnect = async (userId) => {
     try {
       await axios.post(`${API_URL}/api/connections/send-request/${userId}`);
       toast.success('Connection request sent!');
       setSuggestions(suggestions.filter(s => s._id !== userId));
+      setSearchResults(searchResults.filter(s => s._id !== userId));
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to send request');
+    }
+  };
+
+  const handleAccept = async (requesterId) => {
+    try {
+      await axios.post(`${API_URL}/api/connections/accept-request/${requesterId}`);
+      toast.success('Request accepted!');
+      fetchConnections();
+      fetchPendingRequests();
+    } catch (error) {
+      toast.error('Failed to accept request');
+    }
+  };
+
+  const handleReject = async (requesterId) => {
+    try {
+      await axios.post(`${API_URL}/api/connections/reject-request/${requesterId}`);
+      toast.success('Request rejected');
+      fetchPendingRequests();
+    } catch (error) {
+      toast.error('Failed to reject request');
     }
   };
 
