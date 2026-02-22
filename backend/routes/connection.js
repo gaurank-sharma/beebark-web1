@@ -83,6 +83,17 @@ router.post('/reject-request/:requesterId', auth, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+
+router.get('/suggestions', auth, async (req, res) => {
+  try {
+    const { getConnectionSuggestions } = require('../utils/recommendationEngine');
+    const suggestions = await getConnectionSuggestions(req.userId, 10);
+    res.json({ suggestions });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch suggestions', message: error.message });
+  }
+});
+
     currentUser.pendingRequests = currentUser.pendingRequests.filter(
       id => id.toString() !== requesterId
     );
