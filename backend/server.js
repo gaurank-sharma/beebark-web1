@@ -64,9 +64,16 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   
   socket.on('user-connected', (userId) => {
+    // Remove any existing mapping for this user (in case of reconnection)
+    for (const [uid, sid] of connectedUsers.entries()) {
+      if (uid === userId && sid !== socket.id) {
+        connectedUsers.delete(uid);
+        console.log('Removed old socket mapping for user:', userId);
+      }
+    }
     connectedUsers.set(userId, socket.id);
-    console.log('User registered:', userId, 'Socket:', socket.id);
-    console.log('Active users:', Array.from(connectedUsers.keys()));
+    console.log('✅ User registered:', userId, 'Socket:', socket.id);
+    console.log('📊 Active users:', Array.from(connectedUsers.keys()));
   });
 
   socket.on('send-message', async (data) => {
