@@ -170,9 +170,7 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Meeting room events - Fixed for multi-user support
-  const meetingRooms = new Map(); // meetingId -> Set of {socketId, userId, userName}
-  
+  // Meeting room events - using shared meetingRooms Map
   socket.on('join-meeting', (data) => {
     const { meetingId, userId, userName } = data;
     console.log('User joining meeting:', data);
