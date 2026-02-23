@@ -59,6 +59,8 @@ app.use((err, req, res, next) => {
 app.set('io', io);
 
 const connectedUsers = new Map();
+// Meeting rooms Map - shared across all socket connections
+const meetingRooms = new Map(); // meetingId -> Set of {socketId, userId, userName}
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
