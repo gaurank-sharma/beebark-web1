@@ -144,31 +144,50 @@ const Chat = () => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedConnection) return;
 
+    const messageText = newMessage;
     const messageData = {
       receiver: selectedConnection._id,
-      text: newMessage,
+      text: messageText,
       sender: user.id
     };
 
     console.log('📤 Sending message:', messageData);
+    setNewMessage(''); // Clear input immediately
+    
+    // Optimistically add message to UI
+    const tempMessage = {
+      _id: 'temp-' + Date.now(),
+      sender: user.id,
+      receiver: selectedConnection._id,
+      text: messageText,
+      createdAt: new Date()
+    };
+    setMessages(prev => [...prev, tempMessage]);
 
-    if (socket) {
-      const messageText = newMessage;
-      setNewMessage(''); // Clear input immediately
-      
+    // Try socket first, fall back to REST API if socket is not connected
+    if (socket && socket.connected) {
+      console.log('📡 Using socket.io for message');
       socket.emit('send-message', messageData);
-      
-      // Optimistically add message to UI
-      const tempMessage = {
-        _id: 'temp-' + Date.now(),
-        sender: user.id,
-        receiver: selectedConnection._id,
-        text: messageText,
-        createdAt: new Date()
-      };
-      setMessages(prev => [...prev, tempMessage]);
     } else {
-      toast.error('Not connected to server');
+      console.log('⚠️ Socket not connected, using REST API fallback');
+      try {
+        const response = await axios.post(`${API_URL}/api/messages/send`, messageData);
+        console.log('✅ Message sent via REST API:', response.data);
+        
+        // Replace temp message with real one
+        setMessages(prev => {
+          const filtered = prev.filter(m => !m._id.startsWith('temp-'));
+          return [...filtered, response.data.data];
+        });
+        
+        toast.success('Message sent');
+      } catch (error) {
+        console.error('❌ Failed to send message:', error);
+        toast.error('Failed to send message');
+        
+        // Remove the optimistic message
+        setMessages(prev => prev.filter(m => m._id !== tempMessage._id));
+      }
     }
   };
 
