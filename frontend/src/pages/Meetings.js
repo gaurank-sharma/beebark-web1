@@ -44,8 +44,8 @@ const Meetings = () => {
         title: 'Instant Meeting',
         scheduledTime: new Date()
       });
-      toast.success('Meeting started! Code: ' + response.data.meeting.meetingId);
-      fetchMeetings();
+      toast.success('Meeting started!');
+      navigate(`/meeting-room/${response.data.meeting.meetingId}`);
     } catch (error) {
       console.error('Start meeting error:', error);
       toast.error('Failed to start meeting');
@@ -71,7 +71,7 @@ const Meetings = () => {
       toast.error('Please enter a meeting code');
       return;
     }
-    toast.success('Joining meeting: ' + joinCode);
+    navigate(`/meeting-room/${joinCode}`);
   };
 
   return (

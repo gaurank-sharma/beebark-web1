@@ -159,6 +159,29 @@ io.on('connection', (socket) => {
     }
   });
   
+  // Meeting room events
+  socket.on('join-meeting', (data) => {
+    console.log('User joining meeting:', data);
+    socket.join(data.meetingId);
+    socket.to(data.meetingId).emit('user-joined', {
+      userId: data.userId,
+      userName: data.userName,
+      signal: data.signal
+    });
+  });
+
+  socket.on('returning-signal', (data) => {
+    socket.to(data.to).emit('signal-returned', {
+      userId: socket.userId,
+      signal: data.signal
+    });
+  });
+
+  socket.on('leave-meeting', (data) => {
+    socket.leave(data.meetingId);
+    socket.to(data.meetingId).emit('user-left', data.userId);
+  });
+  
   socket.on('disconnect', () => {
     for (const [userId, socketId] of connectedUsers.entries()) {
       if (socketId === socket.id) {

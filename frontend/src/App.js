@@ -13,6 +13,7 @@ import Connections from './pages/Connections';
 import Chat from './pages/Chat';
 import Jobs from './pages/Jobs';
 import Meetings from './pages/Meetings';
+import MeetingRoom from './pages/MeetingRoom';
 import './App.css';
 
 const PrivateRoute = ({ children }) => {
@@ -67,6 +68,7 @@ function App() {
             <Route path="/chat" element={<PrivateRoute><Chat /></PrivateRoute>} />
             <Route path="/jobs" element={<PrivateRoute><Jobs /></PrivateRoute>} />
             <Route path="/meetings" element={<PrivateRoute><Meetings /></PrivateRoute>} />
+            <Route path="/meeting-room/:meetingId" element={<PrivateRoute><MeetingRoom /></PrivateRoute>} />
             <Route path="/reels" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/projects" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/store" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
