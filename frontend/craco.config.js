@@ -32,6 +32,8 @@ if (config.enableHealthCheck) {
   healthPluginInstance = new WebpackHealthPlugin();
 }
 
+const webpack = require('webpack');
+
 const webpackConfig = {
   eslint: {
     configure: {
@@ -47,6 +49,22 @@ const webpackConfig = {
       '@': path.resolve(__dirname, 'src'),
     },
     configure: (webpackConfig) => {
+
+      // Fix process is not defined error
+      webpackConfig.resolve.fallback = {
+        ...webpackConfig.resolve.fallback,
+        process: require.resolve('process/browser'),
+        buffer: require.resolve('buffer/'),
+        stream: require.resolve('stream-browserify'),
+        util: require.resolve('util/'),
+      };
+      
+      webpackConfig.plugins.push(
+        new webpack.ProvidePlugin({
+          process: 'process/browser',
+          Buffer: ['buffer', 'Buffer'],
+        })
+      );
 
       // Add ignored patterns to reduce watched directories
         webpackConfig.watchOptions = {
