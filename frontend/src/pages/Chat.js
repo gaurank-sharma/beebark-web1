@@ -150,9 +150,12 @@ const Chat = () => {
       sender: user.id
     };
 
-    console.log('Sending message:', messageData);
+    console.log('📤 Sending message:', messageData);
 
     if (socket) {
+      const messageText = newMessage;
+      setNewMessage(''); // Clear input immediately
+      
       socket.emit('send-message', messageData);
       
       // Optimistically add message to UI
@@ -160,11 +163,10 @@ const Chat = () => {
         _id: 'temp-' + Date.now(),
         sender: user.id,
         receiver: selectedConnection._id,
-        text: newMessage,
+        text: messageText,
         createdAt: new Date()
       };
-      setMessages([...messages, tempMessage]);
-      setNewMessage('');
+      setMessages(prev => [...prev, tempMessage]);
     } else {
       toast.error('Not connected to server');
     }
