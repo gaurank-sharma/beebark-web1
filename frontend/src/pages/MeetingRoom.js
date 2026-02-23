@@ -54,60 +54,107 @@ const MeetingRoom = () => {
   useEffect(() => {
     if (!socket || !stream) return;
 
+    console.log('Joining meeting:', meetingId);
     socket.emit('join-meeting', { meetingId, userId: user.id, userName: user.name });
 
+    // Handle existing participants when we join
+    socket.on('existing-participants', (existingParticipants) => {
+      console.log('Existing participants:', existingParticipants);
+      
+      // Create peer connections to all existing participants (we are the initiator)
+      existingParticipants.forEach(participant => {
+        createPeer(participant.socketId, participant.userId, participant.userName, true);
+      });
+      
+      setParticipants(existingParticipants.map(p => ({ id: p.userId, name: p.userName, socketId: p.socketId })));
+    });
+
+    // Handle new user joining (we are already in the room, they initiate)
     socket.on('user-joined', (data) => {
-      console.log('User joined:', data);
-      addPeer(data.userId, data.signal);
-      setParticipants(prev => [...prev, { id: data.userId, name: data.userName }]);
+      console.log('New user joined:', data);
+      setParticipants(prev => [...prev, { id: data.userId, name: data.userName, socketId: data.socketId }]);
     });
 
-    socket.on('receiving-signal', (data) => {
-      const peer = addPeer(data.userId, data.signal);
-      socket.emit('returning-signal', { signal: peer.signal(), to: data.userId });
+    // Receive signal from a peer who is initiating connection to us
+    socket.on('receive-signal', (data) => {
+      console.log('Received signal from:', data.from);
+      const peer = createPeer(data.from, data.userId, data.userName, false, data.signal);
+      
+      // Send our signal back
+      peer.on('signal', signal => {
+        socket.emit('return-signal', { to: data.from, signal });
+      });
     });
 
+    // Receive return signal from peer we initiated connection to
     socket.on('signal-returned', (data) => {
-      const item = peersRef.current.find(p => p.peerID === data.userId);
+      console.log('Signal returned from:', data.from);
+      const item = peersRef.current.find(p => p.socketId === data.from);
       if (item) {
         item.peer.signal(data.signal);
       }
     });
 
-    socket.on('user-left', (userId) => {
-      const item = peersRef.current.find(p => p.peerID === userId);
+    socket.on('user-left', (data) => {
+      console.log('User left:', data);
+      const item = peersRef.current.find(p => p.socketId === data.socketId);
       if (item) {
         item.peer.destroy();
       }
-      peersRef.current = peersRef.current.filter(p => p.peerID !== userId);
-      setPeers(peersRef.current);
-      setParticipants(prev => prev.filter(p => p.id !== userId));
+      peersRef.current = peersRef.current.filter(p => p.socketId !== data.socketId);
+      setPeers([...peersRef.current]);
+      setParticipants(prev => prev.filter(p => p.socketId !== data.socketId));
     });
 
     return () => {
       socket.emit('leave-meeting', { meetingId, userId: user.id });
+      socket.off('existing-participants');
       socket.off('user-joined');
-      socket.off('receiving-signal');
+      socket.off('receive-signal');
       socket.off('signal-returned');
       socket.off('user-left');
+      
+      // Clean up all peer connections
+      peersRef.current.forEach(({ peer }) => peer.destroy());
+      peersRef.current = [];
     };
   }, [socket, stream]);
 
-  const addPeer = (userId, incomingSignal) => {
+  const createPeer = (socketId, userId, userName, isInitiator, incomingSignal = null) => {
+    console.log('Creating peer connection:', { socketId, userId, userName, isInitiator });
+    
     const peer = new Peer({
-      initiator: false,
+      initiator: isInitiator,
       trickle: false,
       stream: stream,
     });
 
     peer.on('signal', signal => {
-      socket.emit('returning-signal', { signal, to: userId });
+      console.log('Sending signal to:', socketId);
+      socket.emit('send-signal', { to: socketId, signal });
     });
 
-    peer.signal(incomingSignal);
+    peer.on('stream', remoteStream => {
+      console.log('Received stream from:', socketId);
+      // Stream will be handled in the video element ref
+    });
 
-    peersRef.current.push({ peerID: userId, peer });
-    setPeers(peersRef.current);
+    peer.on('error', err => {
+      console.error('Peer connection error:', err);
+    });
+
+    // If we received a signal, process it
+    if (incomingSignal) {
+      peer.signal(incomingSignal);
+    }
+
+    peersRef.current.push({ 
+      socketId, 
+      peerID: userId, 
+      userName,
+      peer 
+    });
+    setPeers([...peersRef.current]);
     
     return peer;
   };
