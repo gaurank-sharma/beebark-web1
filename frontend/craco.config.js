@@ -50,19 +50,30 @@ const webpackConfig = {
     },
     configure: (webpackConfig) => {
 
-      // Fix process is not defined error
+      // Fix process is not defined error with proper ESM support
       webpackConfig.resolve.fallback = {
         ...webpackConfig.resolve.fallback,
-        process: require.resolve('process/browser'),
+        process: require.resolve('process/browser.js'),
         buffer: require.resolve('buffer/'),
         stream: require.resolve('stream-browserify'),
         util: require.resolve('util/'),
       };
       
+      // Ensure .js extension is properly resolved
+      webpackConfig.resolve.extensions = [
+        ...(webpackConfig.resolve.extensions || []),
+        '.js',
+        '.jsx',
+        '.mjs'
+      ];
+      
       webpackConfig.plugins.push(
         new webpack.ProvidePlugin({
-          process: 'process/browser',
+          process: 'process/browser.js',
           Buffer: ['buffer', 'Buffer'],
+        }),
+        new webpack.DefinePlugin({
+          'process.env': JSON.stringify(process.env),
         })
       );
 
