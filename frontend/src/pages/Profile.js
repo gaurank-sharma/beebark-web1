@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
-import { FiEdit2, FiSave } from 'react-icons/fi';
+import { FiEdit2, FiSave, FiPlus, FiTrash2, FiBriefcase } from 'react-icons/fi';
 
 const Profile = () => {
   const { user, setUser } = useAuth();
@@ -19,9 +19,17 @@ const Profile = () => {
     name: '',
     bio: '',
     profilePic: '',
-    skills: []
+    skills: [],
+    experience: []
   });
   const [newSkill, setNewSkill] = useState('');
+  const [newExperience, setNewExperience] = useState({
+    title: '',
+    company: '',
+    duration: '',
+    description: ''
+  });
+  const [showAddExperience, setShowAddExperience] = useState(false);
   const [loading, setLoading] = useState(false);
   const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -31,7 +39,8 @@ const Profile = () => {
         name: user.name || '',
         bio: user.bio || '',
         profilePic: user.profilePic || '',
-        skills: user.skills || []
+        skills: user.skills || [],
+        experience: user.experience || []
       });
     }
   }, [user]);
@@ -61,29 +70,50 @@ const Profile = () => {
     setFormData({ ...formData, skills: formData.skills.filter(s => s !== skill) });
   };
 
+  const handleAddExperience = () => {
+    if (newExperience.title && newExperience.company) {
+      setFormData({ 
+        ...formData, 
+        experience: [...formData.experience, { ...newExperience }] 
+      });
+      setNewExperience({ title: '', company: '', duration: '', description: '' });
+      setShowAddExperience(false);
+      toast.success('Experience added');
+    } else {
+      toast.error('Please fill in title and company');
+    }
+  };
+
+  const handleRemoveExperience = (index) => {
+    setFormData({
+      ...formData,
+      experience: formData.experience.filter((_, i) => i !== index)
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-50" data-testid="profile-page">
       <Navbar />
       <div className="max-w-4xl mx-auto py-8 px-4">
         <Card className="shadow-xl border-slate-200">
-          <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-t-lg">
+          <CardHeader className="bg-gradient-to-r from-yellow-400 to-yellow-600 text-gray-900 rounded-t-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <Avatar className="w-24 h-24 border-4 border-white">
                   <AvatarImage src={formData.profilePic} />
-                  <AvatarFallback className="bg-white text-blue-700 text-2xl">
+                  <AvatarFallback className="bg-white text-yellow-700 text-2xl font-bold">
                     {formData.name.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <CardTitle className="text-2xl">{user?.name}</CardTitle>
-                  <p className="text-blue-100">{user?.email}</p>
-                  <Badge className="mt-2 bg-white text-blue-700">{user?.role}</Badge>
+                  <CardTitle className="text-2xl font-bold">{user?.name}</CardTitle>
+                  <p className="text-gray-800">{user?.email}</p>
+                  <Badge className="mt-2 bg-gray-900 text-yellow-400">{user?.role}</Badge>
                 </div>
               </div>
               <Button
                 onClick={() => editing ? handleSave() : setEditing(true)}
-                variant="secondary"
+                className="bg-gray-900 text-yellow-400 hover:bg-gray-800"
                 disabled={loading}
                 data-testid="edit-profile-button"
               >
@@ -133,7 +163,7 @@ const Profile = () => {
                       className="border-slate-300"
                       data-testid="skill-input"
                     />
-                    <Button onClick={handleAddSkill} type="button" data-testid="add-skill-button">
+                    <Button onClick={handleAddSkill} type="button" className="bg-yellow-500 hover:bg-yellow-600" data-testid="add-skill-button">
                       Add
                     </Button>
                   </div>
@@ -141,11 +171,84 @@ const Profile = () => {
                     {formData.skills.map((skill, idx) => (
                       <Badge
                         key={idx}
-                        className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer"
+                        className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 cursor-pointer"
                         onClick={() => handleRemoveSkill(skill)}
                       >
                         {skill} ×
                       </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Experience Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-lg font-semibold">Experience</Label>
+                    <Button
+                      onClick={() => setShowAddExperience(!showAddExperience)}
+                      className="bg-yellow-500 hover:bg-yellow-600"
+                      size="sm"
+                    >
+                      <FiPlus className="mr-1" /> Add Experience
+                    </Button>
+                  </div>
+
+                  {showAddExperience && (
+                    <Card className="p-4 bg-slate-50">
+                      <div className="space-y-3">
+                        <Input
+                          placeholder="Job Title"
+                          value={newExperience.title}
+                          onChange={(e) => setNewExperience({ ...newExperience, title: e.target.value })}
+                        />
+                        <Input
+                          placeholder="Company"
+                          value={newExperience.company}
+                          onChange={(e) => setNewExperience({ ...newExperience, company: e.target.value })}
+                        />
+                        <Input
+                          placeholder="Duration (e.g., Jan 2020 - Present)"
+                          value={newExperience.duration}
+                          onChange={(e) => setNewExperience({ ...newExperience, duration: e.target.value })}
+                        />
+                        <Textarea
+                          placeholder="Description"
+                          value={newExperience.description}
+                          onChange={(e) => setNewExperience({ ...newExperience, description: e.target.value })}
+                          rows={3}
+                        />
+                        <div className="flex space-x-2">
+                          <Button onClick={handleAddExperience} className="bg-yellow-500 hover:bg-yellow-600">
+                            Save Experience
+                          </Button>
+                          <Button onClick={() => setShowAddExperience(false)} variant="outline">
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  <div className="space-y-3">
+                    {formData.experience.map((exp, idx) => (
+                      <Card key={idx} className="p-4 relative">
+                        <Button
+                          onClick={() => handleRemoveExperience(idx)}
+                          variant="ghost"
+                          size="sm"
+                          className="absolute top-2 right-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <FiTrash2 />
+                        </Button>
+                        <div className="pr-10">
+                          <h4 className="font-semibold text-gray-900">{exp.title}</h4>
+                          <p className="text-gray-700">{exp.company}</p>
+                          <p className="text-sm text-gray-500">{exp.duration}</p>
+                          {exp.description && (
+                            <p className="text-sm text-gray-600 mt-2">{exp.description}</p>
+                          )}
+                        </div>
+                      </Card>
                     ))}
                   </div>
                 </div>
@@ -161,7 +264,7 @@ const Profile = () => {
                   <div className="flex flex-wrap gap-2">
                     {formData.skills.length > 0 ? (
                       formData.skills.map((skill, idx) => (
-                        <Badge key={idx} className="bg-blue-600">
+                        <Badge key={idx} className="bg-yellow-500 text-gray-900">
                           {skill}
                         </Badge>
                       ))
@@ -170,6 +273,30 @@ const Profile = () => {
                     )}
                   </div>
                 </div>
+
+                {/* Experience Display */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-3 flex items-center">
+                    <FiBriefcase className="mr-2" /> Experience
+                  </h3>
+                  {formData.experience.length > 0 ? (
+                    <div className="space-y-4">
+                      {formData.experience.map((exp, idx) => (
+                        <Card key={idx} className="p-4 border-l-4 border-yellow-500">
+                          <h4 className="font-semibold text-gray-900">{exp.title}</h4>
+                          <p className="text-gray-700 font-medium">{exp.company}</p>
+                          <p className="text-sm text-gray-500">{exp.duration}</p>
+                          {exp.description && (
+                            <p className="text-sm text-gray-600 mt-2">{exp.description}</p>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500">No experience added yet</p>
+                  )}
+                </div>
+
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900 mb-2">Connections</h3>
                   <p className="text-slate-700">{user?.connections?.length || 0} connections</p>
