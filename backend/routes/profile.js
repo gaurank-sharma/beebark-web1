@@ -9,7 +9,23 @@ router.get('/me', auth, async (req, res) => {
       .select('-password')
       .populate('connections', 'name email profilePic bio');
     
-    res.json({ user });
+    // Transform user object to include 'id' (consistent with login response)
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      profilePic: user.profilePic,
+      bio: user.bio,
+      skills: user.skills,
+      experience: user.experience,
+      connections: user.connections,
+      pendingRequests: user.pendingRequests,
+      sentRequests: user.sentRequests
+    };
+    
+    res.json({ user: userResponse });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch profile', message: error.message });
   }
