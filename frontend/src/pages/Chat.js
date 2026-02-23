@@ -1,21 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import Peer from 'simple-peer';
 import Sidebar from '../components/Sidebar';
 import TopBar from '../components/TopBar';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Input } from '../components/ui/input';
-import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip } from 'react-icons/fi';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Button } from '../components/ui/button';
+import { toast } from 'sonner';
+import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip, FiPhoneOff, FiMic, FiMicOff, FiVideoOff } from 'react-icons/fi';
 
 const Chat = () => {
   const [connections, setConnections] = useState([]);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [inCall, setInCall] = useState(false);
+  const [callType, setCallType] = useState(null); // 'audio' or 'video'
+  const [receivingCall, setReceivingCall] = useState(false);
+  const [caller, setCaller] = useState(null);
+  const [callerSignal, setCallerSignal] = useState(null);
+  const [stream, setStream] = useState(null);
+  const [audioMuted, setAudioMuted] = useState(false);
+  const [videoMuted, setVideoMuted] = useState(false);
+
   const socket = useSocket();
   const { user } = useAuth();
   const messagesEndRef = useRef(null);
+  const myVideo = useRef();
+  const userVideo = useRef();
+  const peerRef = useRef();
   const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   useEffect(() => {
@@ -23,15 +39,38 @@ const Chat = () => {
   }, []);
 
   useEffect(() => {
-    if (socket && selectedConnection) {
+    if (socket && user) {
+      socket.emit('user-connected', user.id);
+
       socket.on('receive-message', (message) => {
-        if (message.sender === selectedConnection._id || message.receiver === selectedConnection._id) {
+        if (selectedConnection && (message.sender === selectedConnection._id || message.receiver === selectedConnection._id)) {
           setMessages(prev => [...prev, message]);
         }
       });
-      return () => socket.off('receive-message');
+
+      socket.on('call-signal', (data) => {
+        setReceivingCall(true);
+        setCaller(data.from);
+        setCallerSignal(data.signal);
+        setCallType(data.callType);
+      });
+
+      socket.on('call-accepted', (signal) => {
+        peerRef.current.signal(signal);
+      });
+
+      socket.on('call-ended', () => {
+        endCall();
+      });
+
+      return () => {
+        socket.off('receive-message');
+        socket.off('call-signal');
+        socket.off('call-accepted');
+        socket.off('call-ended');
+      };
     }
-  }, [socket, selectedConnection]);
+  }, [socket, selectedConnection, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -82,11 +121,134 @@ const Chat = () => {
     }
   };
 
+  const startCall = async (type) => {
+    if (!selectedConnection) return;
+    
+    try {
+      const constraints = {
+        video: type === 'video',
+        audio: true
+      };
+      
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      setStream(mediaStream);
+      setCallType(type);
+      setInCall(true);
+      
+      if (myVideo.current) {
+        myVideo.current.srcObject = mediaStream;
+      }
+
+      const peer = new Peer({
+        initiator: true,
+        trickle: false,
+        stream: mediaStream
+      });
+
+      peer.on('signal', (signal) => {
+        socket.emit('call-user', {
+          to: selectedConnection._id,
+          from: user.id,
+          signal: signal,
+          callType: type
+        });
+      });
+
+      peer.on('stream', (remoteStream) => {
+        if (userVideo.current) {
+          userVideo.current.srcObject = remoteStream;
+        }
+      });
+
+      peerRef.current = peer;
+      toast.success(`${type === 'video' ? 'Video' : 'Audio'} call started`);
+    } catch (error) {
+      console.error('Error starting call:', error);
+      toast.error('Failed to start call. Please check your permissions.');
+    }
+  };
+
+  const answerCall = async () => {
+    try {
+      const constraints = {
+        video: callType === 'video',
+        audio: true
+      };
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      setStream(mediaStream);
+      setInCall(true);
+      setReceivingCall(false);
+
+      if (myVideo.current) {
+        myVideo.current.srcObject = mediaStream;
+      }
+
+      const peer = new Peer({
+        initiator: false,
+        trickle: false,
+        stream: mediaStream
+      });
+
+      peer.on('signal', (signal) => {
+        socket.emit('answer-call', {
+          signal: signal,
+          to: caller
+        });
+      });
+
+      peer.on('stream', (remoteStream) => {
+        if (userVideo.current) {
+          userVideo.current.srcObject = remoteStream;
+        }
+      });
+
+      peer.signal(callerSignal);
+      peerRef.current = peer;
+    } catch (error) {
+      console.error('Error answering call:', error);
+      toast.error('Failed to answer call');
+    }
+  };
+
+  const endCall = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    if (peerRef.current) {
+      peerRef.current.destroy();
+    }
+    setInCall(false);
+    setReceivingCall(false);
+    setStream(null);
+    setCallType(null);
+    socket?.emit('end-call', { to: selectedConnection?._id });
+  };
+
+  const toggleAudio = () => {
+    if (stream) {
+      const audioTrack = stream.getAudioTracks()[0];
+      audioTrack.enabled = !audioTrack.enabled;
+      setAudioMuted(!audioTrack.enabled);
+    }
+  };
+
+  const toggleVideo = () => {
+    if (stream) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setVideoMuted(!videoTrack.enabled);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       <Sidebar />
       <TopBar />
       <div className="ml-64 mt-16 flex h-[calc(100vh-4rem)]">
+        {/* Connections List */}
         <div className="w-80 border-r border-gray-200 flex flex-col bg-gray-50">
           <div className="p-4">
             <Input placeholder="Search messages..." className="bg-white" />
@@ -110,9 +272,12 @@ const Chat = () => {
             )) : <p className="p-8 text-center text-gray-500">No connections</p>}
           </div>
         </div>
+
+        {/* Chat Area */}
         <div className="flex-1 flex flex-col">
           {selectedConnection ? (
             <>
+              {/* Chat Header */}
               <div className="h-16 border-b flex items-center justify-between px-6 bg-white">
                 <div className="flex items-center space-x-3">
                   <Avatar className="w-10 h-10">
@@ -125,10 +290,24 @@ const Chat = () => {
                   </div>
                 </div>
                 <div className="flex space-x-4">
-                  <button className="p-2 hover:bg-gray-100 rounded-full"><FiPhone className="w-5 h-5" /></button>
-                  <button className="p-2 hover:bg-gray-100 rounded-full"><FiVideo className="w-5 h-5" /></button>
+                  <button 
+                    onClick={() => startCall('audio')}
+                    className="p-2 hover:bg-gray-100 rounded-full transition"
+                    disabled={inCall}
+                  >
+                    <FiPhone className="w-5 h-5 text-gray-700" />
+                  </button>
+                  <button 
+                    onClick={() => startCall('video')}
+                    className="p-2 hover:bg-gray-100 rounded-full transition"
+                    disabled={inCall}
+                  >
+                    <FiVideo className="w-5 h-5 text-gray-700" />
+                  </button>
                 </div>
               </div>
+
+              {/* Messages */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {messages.map((msg, idx) => {
                   const isSender = msg.sender === user.id || msg.sender === user._id;
@@ -142,6 +321,8 @@ const Chat = () => {
                 })}
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* Message Input */}
               <div className="border-t p-4 bg-white">
                 <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
                   <button type="button" className="p-2 hover:bg-gray-100 rounded-full"><FiImage className="w-5 h-5 text-gray-400" /></button>
@@ -160,6 +341,103 @@ const Chat = () => {
           )}
         </div>
       </div>
+
+      {/* Incoming Call Dialog */}
+      <Dialog open={receivingCall} onOpenChange={setReceivingCall}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Incoming {callType === 'video' ? 'Video' : 'Audio'} Call</DialogTitle>
+          </DialogHeader>
+          <div className="text-center space-y-4">
+            <Avatar className="w-20 h-20 mx-auto">
+              <AvatarImage src={selectedConnection?.profilePic} />
+              <AvatarFallback className="bg-yellow-400 text-2xl">
+                {selectedConnection?.name?.charAt(0)}
+              </AvatarFallback>
+            </Avatar>
+            <p className="text-lg font-semibold">{selectedConnection?.name} is calling...</p>
+            <div className="flex space-x-3 justify-center">
+              <Button onClick={answerCall} className="bg-green-500 hover:bg-green-600">
+                <FiPhone className="mr-2" /> Answer
+              </Button>
+              <Button onClick={() => setReceivingCall(false)} variant="destructive">
+                <FiPhoneOff className="mr-2" /> Decline
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Active Call Dialog */}
+      <Dialog open={inCall} onOpenChange={(open) => !open && endCall()}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{callType === 'video' ? 'Video' : 'Audio'} Call</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Remote Video */}
+              <div className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video">
+                <video 
+                  ref={userVideo} 
+                  autoPlay 
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute bottom-2 left-2 text-white bg-black/50 px-2 py-1 rounded text-sm">
+                  {selectedConnection?.name}
+                </div>
+              </div>
+
+              {/* Local Video */}
+              {callType === 'video' && (
+                <div className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video">
+                  <video 
+                    ref={myVideo} 
+                    autoPlay 
+                    playsInline 
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-2 left-2 text-white bg-black/50 px-2 py-1 rounded text-sm">
+                    You
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Call Controls */}
+            <div className="flex justify-center space-x-4">
+              <Button 
+                onClick={toggleAudio}
+                variant={audioMuted ? "destructive" : "outline"}
+                size="lg"
+                className="rounded-full w-14 h-14"
+              >
+                {audioMuted ? <FiMicOff /> : <FiMic />}
+              </Button>
+              {callType === 'video' && (
+                <Button 
+                  onClick={toggleVideo}
+                  variant={videoMuted ? "destructive" : "outline"}
+                  size="lg"
+                  className="rounded-full w-14 h-14"
+                >
+                  {videoMuted ? <FiVideoOff /> : <FiVideo />}
+                </Button>
+              )}
+              <Button 
+                onClick={endCall}
+                variant="destructive"
+                size="lg"
+                className="rounded-full w-14 h-14"
+              >
+                <FiPhoneOff />
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
