@@ -1,0 +1,233 @@
+const axios = require('axios');
+
+// LLM-powered job matching
+const matchCandidatesWithJobLLM = async (job, candidates) => {
+  const LLM_KEY = process.env.EMERGENT_LLM_KEY || 'sk-emergent-e6644A6E50166B3A02';
+  
+  try {
+    const candidateSummaries = candidates.map((candidate, idx) => {
+      const resume = candidate.resume || {};
+      return `Candidate ${idx + 1}:
+- Name: ${candidate.name}
+- Skills: ${(resume.parsedData?.skills || resume.skills || []).join(', ')}
+- Experience: ${JSON.stringify(resume.parsedData?.experience || resume.experience || 'Not specified')}
+- Education: ${(resume.parsedData?.education || []).join(', ')}`;
+    }).join('\n\n');
+
+    const prompt = `You are an AI recruitment assistant. Analyze and match candidates with the job posting.
+
+Job Details:
+Title: ${job.title}
+Company: ${job.company}
+Description: ${job.description}
+Location: ${job.location}
+Salary: ${job.salary}
+
+Candidates:
+${candidateSummaries}
+
+Task: Score each candidate from 0-100 based on:
+1. Skills match (50%)
+2. Experience relevance (30%)
+3. Education fit (20%)
+
+Respond ONLY with a JSON array in this exact format:
+[
+  {"candidateIndex": 0, "score": 85, "matchedSkills": ["skill1", "skill2"], "reason": "brief reason"},
+  {"candidateIndex": 1, "score": 72, "matchedSkills": ["skill1"], "reason": "brief reason"}
+]`;
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are an expert recruitment AI. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${LLM_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const content = response.data.choices[0].message.content.trim();
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    
+    if (!jsonMatch) {
+      console.error('LLM did not return valid JSON');
+      return fallbackMatching(job, candidates);
+    }
+
+    const scores = JSON.parse(jsonMatch[0]);
+    
+    const scoredCandidates = candidates.map((candidate, idx) => {
+      const scoreData = scores.find(s => s.candidateIndex === idx) || { score: 0, matchedSkills: [], reason: 'No match' };
+      return {
+        ...candidate.toObject(),
+        matchScore: scoreData.score,
+        matchedSkills: scoreData.matchedSkills,
+        matchReason: scoreData.reason
+      };
+    });
+
+    scoredCandidates.sort((a, b) => b.matchScore - a.matchScore);
+    return scoredCandidates.slice(0, 10);
+
+  } catch (error) {
+    console.error('LLM matching error:', error.response?.data || error.message);
+    return fallbackMatching(job, candidates);
+  }
+};
+
+// LLM-powered job recommendations
+const getJobRecommendationsLLM = async (user, allJobs) => {
+  const LLM_KEY = process.env.EMERGENT_LLM_KEY || 'sk-emergent-e6644A6E50166B3A02';
+  
+  try {
+    const userResume = user.resume || {};
+    const userSkills = (userResume.parsedData?.skills || userResume.skills || user.skills || []).join(', ');
+    const userExperience = JSON.stringify(userResume.parsedData?.experience || userResume.experience || user.experience || []);
+
+    const jobSummaries = allJobs.map((job, idx) => {
+      return `Job ${idx + 1}:
+- Title: ${job.title}
+- Company: ${job.company}
+- Description: ${job.description.substring(0, 300)}...
+- Location: ${job.location}
+- Salary: ${job.salary}`;
+    }).join('\n\n');
+
+    const prompt = `You are an AI career advisor. Match the user with relevant job postings.
+
+User Profile:
+- Skills: ${userSkills}
+- Experience: ${userExperience}
+
+Available Jobs:
+${jobSummaries}
+
+Task: Score each job from 0-100 based on:
+1. Skills match (50%)
+2. Experience level fit (30%)
+3. Career growth potential (20%)
+
+Respond ONLY with a JSON array in this exact format:
+[
+  {"jobIndex": 0, "score": 92, "matchedSkills": ["skill1", "skill2"], "reason": "brief reason"},
+  {"jobIndex": 1, "score": 78, "matchedSkills": ["skill1"], "reason": "brief reason"}
+]`;
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are an expert career advisor AI. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${LLM_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const content = response.data.choices[0].message.content.trim();
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    
+    if (!jsonMatch) {
+      console.error('LLM did not return valid JSON for recommendations');
+      return fallbackRecommendations(user, allJobs);
+    }
+
+    const scores = JSON.parse(jsonMatch[0]);
+    
+    const scoredJobs = allJobs.map((job, idx) => {
+      const scoreData = scores.find(s => s.jobIndex === idx) || { score: 0, matchedSkills: [], reason: 'No match' };
+      return {
+        ...job.toObject(),
+        matchScore: scoreData.score,
+        matchedSkills: scoreData.matchedSkills,
+        matchReason: scoreData.reason
+      };
+    });
+
+    scoredJobs.sort((a, b) => b.matchScore - a.matchScore);
+    return scoredJobs.filter(job => job.matchScore > 30).slice(0, 10);
+
+  } catch (error) {
+    console.error('LLM recommendations error:', error.response?.data || error.message);
+    return fallbackRecommendations(user, allJobs);
+  }
+};
+
+// Fallback to simple keyword matching if LLM fails
+function fallbackMatching(job, candidates) {
+  const jobKeywords = extractKeywords(job.description);
+  
+  const scored = candidates.map(candidate => {
+    const resume = candidate.resume || {};
+    const candidateSkills = resume.parsedData?.skills || resume.skills || [];
+    const matched = candidateSkills.filter(skill => 
+      jobKeywords.some(kw => skill.toLowerCase().includes(kw.toLowerCase()))
+    );
+    
+    return {
+      ...candidate.toObject(),
+      matchScore: jobKeywords.length > 0 ? Math.round((matched.length / jobKeywords.length) * 100) : 0,
+      matchedSkills: matched,
+      matchReason: 'Keyword match (fallback)'
+    };
+  });
+  
+  scored.sort((a, b) => b.matchScore - a.matchScore);
+  return scored.slice(0, 10);
+}
+
+function fallbackRecommendations(user, allJobs) {
+  const userSkills = user.resume?.parsedData?.skills || user.resume?.skills || user.skills || [];
+  
+  const scored = allJobs.map(job => {
+    const jobKeywords = extractKeywords(job.description);
+    const matched = userSkills.filter(skill =>
+      jobKeywords.some(kw => skill.toLowerCase().includes(kw.toLowerCase()))
+    );
+    
+    return {
+      ...job.toObject(),
+      matchScore: jobKeywords.length > 0 ? Math.round((matched.length / jobKeywords.length) * 100) : 0,
+      matchedSkills: matched,
+      matchReason: 'Keyword match (fallback)'
+    };
+  });
+  
+  scored.sort((a, b) => b.matchScore - a.matchScore);
+  return scored.filter(job => job.matchScore > 30).slice(0, 10);
+}
+
+function extractKeywords(text) {
+  const commonSkills = [
+    'JavaScript', 'Python', 'Java', 'React', 'Node.js', 'Angular', 'Vue',
+    'MongoDB', 'PostgreSQL', 'MySQL', 'AWS', 'Azure', 'Docker', 'Kubernetes',
+    'Machine Learning', 'AI', 'Data Science', 'DevOps', 'CI/CD',
+    'HTML', 'CSS', 'TypeScript', 'REST API', 'GraphQL', 'Git', 'Express'
+  ];
+  
+  const lowerText = text.toLowerCase();
+  return commonSkills.filter(skill => lowerText.includes(skill.toLowerCase()));
+}
+
+module.exports = {
+  matchCandidatesWithJobLLM,
+  getJobRecommendationsLLM
+};
