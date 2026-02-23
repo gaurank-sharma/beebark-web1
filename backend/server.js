@@ -57,6 +57,8 @@ app.use((err, req, res, next) => {
 });
 
 app.set('io', io);
+app.set('connectedUsers', connectedUsers);
+app.set('meetingRooms', meetingRooms);
 
 const connectedUsers = new Map();
 // Meeting rooms Map - shared across all socket connections
