@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
-  const API_URL = process.env.REACT_APP_BACKEND_URL;
+  import { API_URL } from '../config/api'; // Auto-fixed
 
   useEffect(() => {
     if (token) {

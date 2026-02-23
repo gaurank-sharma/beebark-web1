@@ -8,7 +8,7 @@ import { FiUpload, FiX } from 'react-icons/fi';
 const ImageUpload = ({ onUploadComplete, multiple = false }) => {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(null);
-  const API_URL = process.env.REACT_APP_BACKEND_URL;
+  import { API_URL } from '../config/api'; // Auto-fixed
 
   const onDrop = useCallback(async (acceptedFiles) => {
     if (acceptedFiles.length === 0) return;

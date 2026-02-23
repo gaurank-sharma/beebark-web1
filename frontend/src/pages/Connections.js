@@ -18,7 +18,7 @@ const Connections = () => {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [activeTab, setActiveTab] = useState('suggestions');
-  const API_URL = process.env.REACT_APP_BACKEND_URL;
+  import { API_URL } from '../config/api'; // Auto-fixed
 
   const fetchSuggestions = useCallback(async () => {
     try {

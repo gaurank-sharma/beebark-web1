@@ -28,7 +28,7 @@ const Feed = () => {
   const [storyMediaUrl, setStoryMediaUrl] = useState('');
   const [storyCaption, setStoryCaption] = useState('');
   const { user } = useAuth();
-  const API_URL = process.env.REACT_APP_BACKEND_URL;
+  import { API_URL } from '../config/api'; // Auto-fixed
 
   useEffect(() => {
     fetchFeed();

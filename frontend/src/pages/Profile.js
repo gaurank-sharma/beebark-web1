@@ -31,7 +31,7 @@ const Profile = () => {
   });
   const [showAddExperience, setShowAddExperience] = useState(false);
   const [loading, setLoading] = useState(false);
-  const API_URL = process.env.REACT_APP_BACKEND_URL;
+  import { API_URL } from '../config/api'; // Auto-fixed
 
   useEffect(() => {
     if (user) {
