@@ -4,11 +4,11 @@ import axios from 'axios';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { FiUpload, FiX } from 'react-icons/fi';
+import { API_URL } from '../config/api';
 
 const ImageUpload = ({ onUploadComplete, multiple = false }) => {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(null);
-  import { API_URL } from '../config/api'; // Auto-fixed
 
   const onDrop = useCallback(async (acceptedFiles) => {
     if (acceptedFiles.length === 0) return;
