@@ -92,10 +92,25 @@ io.on('connection', (socket) => {
   socket.on('call-user', (data) => {
     const receiverSocketId = connectedUsers.get(data.to);
     if (receiverSocketId) {
-      io.to(receiverSocketId).emit('incoming-call', {
+      io.to(receiverSocketId).emit('call-signal', {
         from: data.from,
+        signal: data.signal,
         callType: data.callType
       });
+    }
+  });
+
+  socket.on('answer-call', (data) => {
+    const callerSocketId = connectedUsers.get(data.to);
+    if (callerSocketId) {
+      io.to(callerSocketId).emit('call-accepted', data.signal);
+    }
+  });
+
+  socket.on('end-call', (data) => {
+    const receiverSocketId = connectedUsers.get(data.to);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit('call-ended');
     }
   });
   
