@@ -90,6 +90,7 @@ const Chat = () => {
       const response = await axios.get(`${API_URL}/api/messages/${connectionId}`);
       setMessages(response.data.messages || []);
     } catch (error) {
+      console.error('Failed to load messages:', error);
       setMessages([]);
     }
   };
