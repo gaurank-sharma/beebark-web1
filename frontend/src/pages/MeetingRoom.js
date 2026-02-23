@@ -279,14 +279,14 @@ const MeetingRoom = () => {
           </Card>
 
           {/* Peer Videos */}
-          {peers.map((peer, index) => (
-            <Card key={index} className="relative bg-gray-800 border-gray-700 overflow-hidden">
+          {peers.map((peerObj, index) => (
+            <Card key={peerObj.socketId} className="relative bg-gray-800 border-gray-700 overflow-hidden">
               <video
                 autoPlay
                 playsInline
                 ref={ref => {
-                  if (ref && peer.peer) {
-                    peer.peer.on('stream', stream => {
+                  if (ref && peerObj.peer) {
+                    peerObj.peer.on('stream', stream => {
                       ref.srcObject = stream;
                     });
                   }
@@ -294,7 +294,7 @@ const MeetingRoom = () => {
                 className="w-full h-full object-cover"
               />
               <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-sm">
-                Participant {index + 1}
+                {peerObj.userName || `Participant ${index + 1}`}
               </div>
             </Card>
           ))}
