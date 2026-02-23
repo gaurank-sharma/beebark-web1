@@ -48,9 +48,38 @@ router.post('/send', auth, async (req, res) => {
     });
 
     await message.save();
+    
+    // Try to send via socket.io if receiver is online
+    const io = req.app.get('io');
+    const connectedUsers = req.app.get('connectedUsers');
+    
+    if (io && connectedUsers) {
+      const receiverSocketId = connectedUsers.get(receiver);
+      if (receiverSocketId) {
+        const messageData = {
+          _id: message._id.toString(),
+          sender: req.userId,
+          receiver,
+          text,
+          createdAt: message.createdAt
+        };
+        io.to(receiverSocketId).emit('receive-message', messageData);
+        console.log('✅ Message delivered via socket to:', receiverSocketId);
+      }
+    }
 
-    res.json({ message: 'Message sent', data: message });
+    res.json({ 
+      message: 'Message sent', 
+      data: {
+        _id: message._id.toString(),
+        sender: req.userId,
+        receiver,
+        text,
+        createdAt: message.createdAt
+      }
+    });
   } catch (error) {
+    console.error('Message send error:', error);
     res.status(500).json({ error: 'Failed to send message', message: error.message });
   }
 });
