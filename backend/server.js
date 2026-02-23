@@ -66,16 +66,25 @@ io.on('connection', (socket) => {
   socket.on('user-connected', (userId) => {
     connectedUsers.set(userId, socket.id);
     console.log('User registered:', userId, 'Socket:', socket.id);
+    console.log('Active users:', Array.from(connectedUsers.keys()));
   });
 
   socket.on('send-message', async (data) => {
+    console.log('Received message:', data);
     try {
       const Message = require('./models/Message');
       const User = require('./models/User');
       
       // Validate sender is connected with receiver
       const sender = await User.findById(data.sender);
-      if (!sender || !sender.connections.includes(data.receiver)) {
+      if (!sender) {
+        console.error('Sender not found:', data.sender);
+        socket.emit('message-error', { error: 'Sender not found' });
+        return;
+      }
+      
+      if (!sender.connections.includes(data.receiver)) {
+        console.error('Not connected with this user');
         socket.emit('message-error', { error: 'Not connected with this user' });
         return;
       }
@@ -88,29 +97,31 @@ io.on('connection', (socket) => {
       });
       await message.save();
       
-      console.log('Message saved:', message._id, 'from', data.sender, 'to', data.receiver);
+      console.log('Message saved to DB:', message._id);
       
-      // Send to receiver if online
-      const receiverSocketId = connectedUsers.get(data.receiver);
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('receive-message', {
-          _id: message._id,
-          sender: data.sender,
-          receiver: data.receiver,
-          text: data.text,
-          createdAt: message.createdAt
-        });
-        console.log('Message sent to receiver socket:', receiverSocketId);
-      }
-      
-      // Confirm to sender
-      socket.emit('message-sent', {
-        _id: message._id,
+      const messageData = {
+        _id: message._id.toString(),
         sender: data.sender,
         receiver: data.receiver,
         text: data.text,
         createdAt: message.createdAt
-      });
+      };
+      
+      // Send to receiver if online
+      const receiverSocketId = connectedUsers.get(data.receiver);
+      console.log('Looking for receiver:', data.receiver, 'Socket:', receiverSocketId);
+      
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('receive-message', messageData);
+        console.log('Message sent to receiver socket:', receiverSocketId);
+      } else {
+        console.log('Receiver not online');
+      }
+      
+      // Confirm to sender
+      socket.emit('message-sent', messageData);
+      console.log('Message confirmed to sender');
+      
     } catch (error) {
       console.error('Message error:', error);
       socket.emit('message-error', { error: error.message });
@@ -118,6 +129,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('call-user', (data) => {
+    console.log('Call initiated from', data.from, 'to', data.to);
     const receiverSocketId = connectedUsers.get(data.to);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit('call-signal', {
@@ -125,13 +137,18 @@ io.on('connection', (socket) => {
         signal: data.signal,
         callType: data.callType
       });
+      console.log('Call signal sent to', data.to);
+    } else {
+      console.log('Receiver not online for call');
     }
   });
 
   socket.on('answer-call', (data) => {
+    console.log('Call answered by', data.to);
     const callerSocketId = connectedUsers.get(data.to);
     if (callerSocketId) {
       io.to(callerSocketId).emit('call-accepted', data.signal);
+      console.log('Call accepted signal sent');
     }
   });
 

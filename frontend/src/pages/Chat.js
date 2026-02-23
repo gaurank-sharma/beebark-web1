@@ -40,12 +40,27 @@ const Chat = () => {
 
   useEffect(() => {
     if (socket && user) {
+      console.log('Setting up socket for user:', user.id);
       socket.emit('user-connected', user.id);
 
       socket.on('receive-message', (message) => {
+        console.log('Received message:', message);
         if (selectedConnection && (message.sender === selectedConnection._id || message.receiver === selectedConnection._id)) {
-          setMessages(prev => [...prev, message]);
+          setMessages(prev => {
+            // Avoid duplicates
+            if (prev.some(m => m._id === message._id)) return prev;
+            return [...prev, message];
+          });
         }
+      });
+
+      socket.on('message-sent', (message) => {
+        console.log('Message sent confirmed:', message);
+      });
+
+      socket.on('message-error', (error) => {
+        console.error('Message error:', error);
+        toast.error(error.error || 'Failed to send message');
       });
 
       socket.on('call-signal', (data) => {
@@ -110,15 +125,23 @@ const Chat = () => {
       sender: user.id
     };
 
+    console.log('Sending message:', messageData);
+
     if (socket) {
       socket.emit('send-message', messageData);
-      setMessages([...messages, {
+      
+      // Optimistically add message to UI
+      const tempMessage = {
+        _id: 'temp-' + Date.now(),
         sender: user.id,
         receiver: selectedConnection._id,
         text: newMessage,
         createdAt: new Date()
-      }]);
+      };
+      setMessages([...messages, tempMessage]);
       setNewMessage('');
+    } else {
+      toast.error('Not connected to server');
     }
   };
 
