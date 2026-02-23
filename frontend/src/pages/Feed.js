@@ -7,23 +7,32 @@ import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Card, CardContent } from '../components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
-import { FiHeart, FiMessageCircle, FiSend, FiImage, FiPlus } from 'react-icons/fi';
+import { FiHeart, FiMessageCircle, FiSend, FiImage, FiPlus, FiX } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 
 const Feed = () => {
   const [posts, setPosts] = useState([]);
+  const [stories, setStories] = useState([]);
   const [newPost, setNewPost] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [commentTexts, setCommentTexts] = useState({});
+  const [showStoryModal, setShowStoryModal] = useState(false);
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
+  const [selectedStories, setSelectedStories] = useState(null);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+  const [storyMediaUrl, setStoryMediaUrl] = useState('');
+  const [storyCaption, setStoryCaption] = useState('');
   const { user } = useAuth();
   const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   useEffect(() => {
     fetchFeed();
+    fetchStories();
   }, []);
 
   const fetchFeed = async () => {
@@ -32,6 +41,15 @@ const Feed = () => {
       setPosts(response.data.posts);
     } catch (error) {
       console.error('Failed to load feed');
+    }
+  };
+
+  const fetchStories = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/stories/feed`);
+      setStories(response.data.stories);
+    } catch (error) {
+      console.error('Failed to load stories');
     }
   };
 
@@ -54,6 +72,64 @@ const Feed = () => {
       toast.error('Failed to create post');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateStory = async () => {
+    if (!storyMediaUrl.trim()) {
+      toast.error('Please upload an image for your story');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await axios.post(`${API_URL}/api/stories/create`, {
+        mediaUrl: storyMediaUrl,
+        caption: storyCaption,
+        mediaType: 'image'
+      });
+      setStoryMediaUrl('');
+      setStoryCaption('');
+      setShowStoryModal(false);
+      fetchStories();
+      toast.success('Story created!');
+    } catch (error) {
+      toast.error('Failed to create story');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewStory = async (storyGroup, index) => {
+    setSelectedStories(storyGroup);
+    setCurrentStoryIndex(index);
+    setShowStoryViewer(true);
+    
+    // Mark as viewed
+    if (storyGroup.stories[index]._id) {
+      try {
+        await axios.post(`${API_URL}/api/stories/${storyGroup.stories[index]._id}/view`);
+      } catch (error) {
+        console.error('Failed to mark story as viewed');
+      }
+    }
+  };
+
+  const nextStory = () => {
+    if (selectedStories && currentStoryIndex < selectedStories.stories.length - 1) {
+      const nextIndex = currentStoryIndex + 1;
+      setCurrentStoryIndex(nextIndex);
+      handleViewStory(selectedStories, nextIndex);
+    } else {
+      setShowStoryViewer(false);
+    }
+  };
+
+  const previousStory = () => {
+    if (currentStoryIndex > 0) {
+      const prevIndex = currentStoryIndex - 1;
+      setCurrentStoryIndex(prevIndex);
+      handleViewStory(selectedStories, prevIndex);
     }
   };
 
@@ -95,29 +171,44 @@ const Feed = () => {
       <div className="ml-64 mt-16 p-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            {/* Stories Section */}
             <Card className="overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex space-x-3 overflow-x-auto pb-2">
-                  <div className="flex-shrink-0 text-center cursor-pointer">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500 border-2 border-yellow-600 flex items-center justify-center mb-2">
+                  {/* Add Story Button */}
+                  <div 
+                    className="flex-shrink-0 text-center cursor-pointer"
+                    onClick={() => setShowStoryModal(true)}
+                  >
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500 border-2 border-yellow-600 flex items-center justify-center mb-2 hover:scale-105 transition">
                       <FiPlus className="w-6 h-6 text-black" />
                     </div>
                     <p className="text-xs font-medium">Add Story</p>
                   </div>
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="flex-shrink-0 text-center cursor-pointer">
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 border-2 border-white flex items-center justify-center mb-2">
-                        <Avatar className="w-14 h-14">
-                          <AvatarFallback className="bg-gray-200">U</AvatarFallback>
+
+                  {/* User Stories */}
+                  {stories.map((storyGroup, idx) => (
+                    <div 
+                      key={idx} 
+                      className="flex-shrink-0 text-center cursor-pointer"
+                      onClick={() => handleViewStory(storyGroup, 0)}
+                    >
+                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 p-0.5 mb-2 hover:scale-105 transition">
+                        <Avatar className="w-full h-full border-2 border-white">
+                          <AvatarImage src={storyGroup.author.profilePic} />
+                          <AvatarFallback className="bg-yellow-400 text-black">
+                            {storyGroup.author.name.charAt(0)}
+                          </AvatarFallback>
                         </Avatar>
                       </div>
-                      <p className="text-xs">User {i}</p>
+                      <p className="text-xs truncate w-16">{storyGroup.author.name.split(' ')[0]}</p>
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
 
+            {/* Create Post Card */}
             <Card>
               <CardContent className="pt-6">
                 <div className="flex space-x-3 mb-4">
@@ -138,91 +229,113 @@ const Feed = () => {
                   </div>
                 )}
                 {mediaUrl && (
-                  <div className="mb-4">
+                  <div className="mb-4 relative">
                     <img src={mediaUrl} alt="Upload" className="rounded-lg max-h-64 object-cover" />
+                    <button 
+                      onClick={() => setMediaUrl('')}
+                      className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1 hover:bg-black/70"
+                    >
+                      <FiX />
+                    </button>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
-                  <button onClick={() => setShowUpload(!showUpload)} className="flex items-center space-x-2 text-gray-600 hover:text-black">
-                    <FiImage className="w-5 h-5" /><span className="text-sm">Photo</span>
+                  <button 
+                    onClick={() => setShowUpload(!showUpload)} 
+                    className="flex items-center space-x-2 text-gray-600 hover:text-black"
+                  >
+                    <FiImage className="w-5 h-5" />
+                    <span className="text-sm">Photo</span>
                   </button>
-                  <Button onClick={handleCreatePost} disabled={loading || (!newPost.trim() && !mediaUrl)} className="bg-black hover:bg-gray-900 text-white">
+                  <Button 
+                    onClick={handleCreatePost} 
+                    disabled={loading || (!newPost.trim() && !mediaUrl)} 
+                    className="bg-black hover:bg-gray-900 text-white"
+                  >
                     Share
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
-            <div className="space-y-6">
-              {posts.map((post) => (
-                <Card key={post._id}>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center space-x-3 mb-4">
-                      <Avatar>
-                        <AvatarImage src={post.author.profilePic} />
-                        <AvatarFallback className="bg-yellow-400 text-black">{post.author.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-semibold text-black">{post.author.name}</p>
-                        <p className="text-xs text-gray-500">{new Date(post.createdAt).toLocaleDateString()}</p>
-                      </div>
+            {/* Posts Feed */}
+            {posts.map((post) => (
+              <Card key={post._id} className="overflow-hidden">
+                <CardContent className="p-0">
+                  <div className="p-4 flex items-center space-x-3">
+                    <Avatar>
+                      <AvatarImage src={post.author?.profilePic} />
+                      <AvatarFallback className="bg-yellow-400 text-black">
+                        {post.author?.name?.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-semibold">{post.author?.name}</p>
+                      <p className="text-xs text-gray-500">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
-                    <p className="text-gray-700 mb-4">{post.content}</p>
-                    {post.mediaUrl && <img src={post.mediaUrl} alt="Post" className="rounded-lg w-full object-cover max-h-96 mb-4" />}
-                    <div className="flex items-center space-x-6 pt-3 border-t">
-                      <button onClick={() => handleLike(post._id)} className="flex items-center space-x-2 text-gray-600 hover:text-red-500">
-                        <FiHeart className={`w-5 h-5 ${post.likes.includes(user.id) ? 'fill-red-500 text-red-500' : ''}`} />
-                        <span>{post.likes.length}</span>
+                  </div>
+                  <div className="px-4 pb-3">
+                    <p className="text-gray-800">{post.content}</p>
+                  </div>
+                  {post.mediaUrl && (
+                    <img src={post.mediaUrl} alt="Post" className="w-full max-h-96 object-cover" />
+                  )}
+                  <div className="p-4 space-y-3">
+                    <div className="flex items-center space-x-4">
+                      <button 
+                        onClick={() => handleLike(post._id)}
+                        className={`flex items-center space-x-1 ${post.likes?.includes(user?.id) ? 'text-red-600' : 'text-gray-600'} hover:text-red-600`}
+                      >
+                        <FiHeart className={post.likes?.includes(user?.id) ? 'fill-current' : ''} />
+                        <span className="text-sm">{post.likes?.length || 0}</span>
                       </button>
-                      <div className="flex items-center space-x-2 text-gray-600">
-                        <FiMessageCircle className="w-5 h-5" />
-                        <span>{post.comments.length}</span>
-                      </div>
+                      <button className="flex items-center space-x-1 text-gray-600 hover:text-black">
+                        <FiMessageCircle />
+                        <span className="text-sm">{post.comments?.length || 0}</span>
+                      </button>
                     </div>
-                    {post.comments.length > 0 && (
-                      <div className="mt-4 space-y-3">
-                        {post.comments.map((comment, idx) => (
-                          <div key={idx} className="flex space-x-2">
-                            <Avatar className="w-8 h-8">
-                              <AvatarFallback className="text-xs">{comment.author?.name?.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 bg-gray-50 rounded-lg px-3 py-2">
-                              <p className="text-sm font-semibold">{comment.author?.name}</p>
-                              <p className="text-sm text-gray-700">{comment.text}</p>
-                            </div>
+                    {post.comments && post.comments.length > 0 && (
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {post.comments.slice(-3).map((comment, idx) => (
+                          <div key={idx} className="flex space-x-2 text-sm">
+                            <span className="font-semibold">{comment.author?.name}:</span>
+                            <span className="text-gray-700">{comment.text}</span>
                           </div>
                         ))}
                       </div>
                     )}
-                    <div className="flex space-x-2 mt-4">
+                    <div className="flex space-x-2">
                       <Input
-                        placeholder="Write a comment..."
+                        placeholder="Add a comment..."
                         value={commentTexts[post._id] || ''}
                         onChange={(e) => setCommentTexts({ ...commentTexts, [post._id]: e.target.value })}
-                        className="flex-1"
+                        onKeyPress={(e) => e.key === 'Enter' && handleComment(post._id)}
+                        className="text-sm"
                       />
-                      <Button onClick={() => handleComment(post._id)} size="sm" className="bg-black text-white">
+                      <Button 
+                        onClick={() => handleComment(post._id)} 
+                        size="sm"
+                        disabled={!commentTexts[post._id]?.trim()}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-black"
+                      >
                         <FiSend />
                       </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
+          {/* Right Sidebar */}
           <div className="space-y-6">
             <Card>
               <CardContent className="pt-6">
-                <h3 className="font-bold text-black mb-4">Upcoming Webinars</h3>
+                <h3 className="font-bold text-lg mb-4">Upcoming Webinars</h3>
                 <div className="space-y-3">
-                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm font-semibold">Design Workshop</p>
-                    <p className="text-xs text-gray-600">Wed 20 Sept, Online</p>
-                  </div>
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm font-semibold">AI in Construction</p>
-                    <p className="text-xs text-gray-600">Fri 22 Sept, Virtual</p>
+                  <div className="p-3 bg-yellow-50 rounded-lg">
+                    <p className="font-semibold text-sm">BeeBark Networking Event</p>
+                    <p className="text-xs text-gray-600">Tomorrow, 3 PM</p>
                   </div>
                 </div>
               </CardContent>
@@ -230,25 +343,11 @@ const Feed = () => {
 
             <Card>
               <CardContent className="pt-6">
-                <h3 className="font-bold text-black mb-4">Active Projects</h3>
+                <h3 className="font-bold text-lg mb-4">Active Projects</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-yellow-400 rounded-lg flex items-center justify-center">
-                      <span className="font-bold text-black">P1</span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold">Urban Development</p>
-                      <p className="text-xs text-gray-500">5 members</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-blue-400 rounded-lg flex items-center justify-center">
-                      <span className="font-bold text-white">P2</span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold">Smart City</p>
-                      <p className="text-xs text-gray-500">8 members</p>
-                    </div>
+                  <div className="p-3 bg-gray-100 rounded-lg">
+                    <p className="font-semibold text-sm">Community Building</p>
+                    <p className="text-xs text-gray-600">24 members</p>
                   </div>
                 </div>
               </CardContent>
@@ -256,6 +355,92 @@ const Feed = () => {
           </div>
         </div>
       </div>
+
+      {/* Create Story Modal */}
+      <Dialog open={showStoryModal} onOpenChange={setShowStoryModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create a Story</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <ImageUpload onUploadComplete={(url) => setStoryMediaUrl(url)} />
+            {storyMediaUrl && (
+              <img src={storyMediaUrl} alt="Story preview" className="rounded-lg max-h-64 object-cover w-full" />
+            )}
+            <Input
+              placeholder="Add a caption (optional)"
+              value={storyCaption}
+              onChange={(e) => setStoryCaption(e.target.value)}
+            />
+            <div className="flex space-x-2">
+              <Button 
+                onClick={handleCreateStory} 
+                disabled={loading || !storyMediaUrl}
+                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black"
+              >
+                Post Story
+              </Button>
+              <Button variant="outline" onClick={() => setShowStoryModal(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Story Viewer Modal */}
+      <Dialog open={showStoryViewer} onOpenChange={setShowStoryViewer}>
+        <DialogContent className="max-w-lg p-0">
+          {selectedStories && selectedStories.stories[currentStoryIndex] && (
+            <div className="relative bg-black">
+              <div className="absolute top-4 left-4 z-10 flex items-center space-x-2">
+                <Avatar className="w-10 h-10 border-2 border-white">
+                  <AvatarImage src={selectedStories.author.profilePic} />
+                  <AvatarFallback>{selectedStories.author.name.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div className="text-white">
+                  <p className="font-semibold text-sm">{selectedStories.author.name}</p>
+                  <p className="text-xs opacity-75">
+                    {new Date(selectedStories.stories[currentStoryIndex].createdAt).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowStoryViewer(false)}
+                className="absolute top-4 right-4 z-10 text-white bg-black/50 rounded-full p-2 hover:bg-black/70"
+              >
+                <FiX />
+              </button>
+              <img 
+                src={selectedStories.stories[currentStoryIndex].mediaUrl} 
+                alt="Story" 
+                className="w-full max-h-[80vh] object-contain"
+              />
+              {selectedStories.stories[currentStoryIndex].caption && (
+                <div className="absolute bottom-4 left-4 right-4 text-white bg-black/50 p-3 rounded">
+                  <p>{selectedStories.stories[currentStoryIndex].caption}</p>
+                </div>
+              )}
+              {currentStoryIndex > 0 && (
+                <button 
+                  onClick={previousStory}
+                  className="absolute left-2 top-1/2 transform -translate-y-1/2 text-white bg-black/50 rounded-full p-2 hover:bg-black/70"
+                >
+                  ‹
+                </button>
+              )}
+              {currentStoryIndex < selectedStories.stories.length - 1 && (
+                <button 
+                  onClick={nextStory}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-white bg-black/50 rounded-full p-2 hover:bg-black/70"
+                >
+                  ›
+                </button>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
