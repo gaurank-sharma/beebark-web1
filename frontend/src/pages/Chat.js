@@ -139,6 +139,25 @@ const Chat = () => {
     setSelectedConnection(connection);
     fetchMessages(connection._id);
   };
+  
+  // Poll for new messages if socket is not connected
+  useEffect(() => {
+    if (!selectedConnection) return;
+    
+    // If socket is connected, rely on socket events
+    if (socket && socket.connected) {
+      console.log('🔌 Socket connected, using real-time updates');
+      return;
+    }
+    
+    // Otherwise, poll every 3 seconds for new messages
+    console.log('⏰ Socket not connected, polling for messages');
+    const pollInterval = setInterval(() => {
+      fetchMessages(selectedConnection._id);
+    }, 3000);
+    
+    return () => clearInterval(pollInterval);
+  }, [selectedConnection, socket]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
