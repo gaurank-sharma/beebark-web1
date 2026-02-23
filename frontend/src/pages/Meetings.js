@@ -44,9 +44,10 @@ const Meetings = () => {
         title: 'Instant Meeting',
         scheduledTime: new Date()
       });
-      toast.success('Meeting started!');
-      navigate(`/meeting-room/${response.data.meeting.meetingId}`);
+      toast.success('Meeting started! Code: ' + response.data.meeting.meetingId);
+      fetchMeetings();
     } catch (error) {
+      console.error('Start meeting error:', error);
       toast.error('Failed to start meeting');
     }
   };
@@ -60,6 +61,7 @@ const Meetings = () => {
       fetchMeetings();
       setScheduleData({ title: '', scheduledTime: '', duration: '60', participants: [] });
     } catch (error) {
+      console.error('Schedule meeting error:', error);
       toast.error('Failed to schedule meeting');
     }
   };
@@ -69,7 +71,7 @@ const Meetings = () => {
       toast.error('Please enter a meeting code');
       return;
     }
-    navigate(`/meeting-room/${joinCode}`);
+    toast.success('Joining meeting: ' + joinCode);
   };
 
   return (
