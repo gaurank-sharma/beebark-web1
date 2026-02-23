@@ -40,26 +40,48 @@ const Chat = () => {
 
   useEffect(() => {
     if (socket && user) {
-      console.log('Setting up socket for user:', user.id);
+      console.log('🔌 Setting up socket for user:', user.id);
+      // Register user immediately when socket connects
       socket.emit('user-connected', user.id);
+      
+      // Re-register on reconnection
+      socket.on('connect', () => {
+        console.log('🔌 Socket reconnected, re-registering user');
+        socket.emit('user-connected', user.id);
+      });
 
       socket.on('receive-message', (message) => {
-        console.log('Received message:', message);
+        console.log('📩 Received message:', message);
+        // Check if message is for current conversation
         if (selectedConnection && (message.sender === selectedConnection._id || message.receiver === selectedConnection._id)) {
           setMessages(prev => {
             // Avoid duplicates
-            if (prev.some(m => m._id === message._id)) return prev;
+            if (prev.some(m => m._id === message._id)) {
+              console.log('⚠️ Duplicate message, skipping');
+              return prev;
+            }
+            console.log('✅ Adding message to conversation');
             return [...prev, message];
           });
+        } else {
+          console.log('⚠️ Message not for current conversation');
         }
       });
 
       socket.on('message-sent', (message) => {
-        console.log('Message sent confirmed:', message);
+        console.log('✅ Message sent confirmed:', message);
+        // Update the temporary message with the real one from server
+        setMessages(prev => {
+          const filtered = prev.filter(m => !m._id.startsWith('temp-'));
+          if (!filtered.some(m => m._id === message._id)) {
+            return [...filtered, message];
+          }
+          return filtered;
+        });
       });
 
       socket.on('message-error', (error) => {
-        console.error('Message error:', error);
+        console.error('❌ Message error:', error);
         toast.error(error.error || 'Failed to send message');
       });
 
@@ -79,7 +101,10 @@ const Chat = () => {
       });
 
       return () => {
+        socket.off('connect');
         socket.off('receive-message');
+        socket.off('message-sent');
+        socket.off('message-error');
         socket.off('call-signal');
         socket.off('call-accepted');
         socket.off('call-ended');
