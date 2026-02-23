@@ -65,24 +65,52 @@ io.on('connection', (socket) => {
   
   socket.on('user-connected', (userId) => {
     connectedUsers.set(userId, socket.id);
-    console.log('User registered:', userId);
+    console.log('User registered:', userId, 'Socket:', socket.id);
   });
 
   socket.on('send-message', async (data) => {
     try {
       const Message = require('./models/Message');
+      const User = require('./models/User');
+      
+      // Validate sender is connected with receiver
+      const sender = await User.findById(data.sender);
+      if (!sender || !sender.connections.includes(data.receiver)) {
+        socket.emit('message-error', { error: 'Not connected with this user' });
+        return;
+      }
+      
+      // Save message to database
       const message = new Message({
-        sender: data.sender || socket.userId,
+        sender: data.sender,
         receiver: data.receiver,
         text: data.text
       });
       await message.save();
       
+      console.log('Message saved:', message._id, 'from', data.sender, 'to', data.receiver);
+      
+      // Send to receiver if online
       const receiverSocketId = connectedUsers.get(data.receiver);
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit('receive-message', message);
+        io.to(receiverSocketId).emit('receive-message', {
+          _id: message._id,
+          sender: data.sender,
+          receiver: data.receiver,
+          text: data.text,
+          createdAt: message.createdAt
+        });
+        console.log('Message sent to receiver socket:', receiverSocketId);
       }
-      socket.emit('message-sent', message);
+      
+      // Confirm to sender
+      socket.emit('message-sent', {
+        _id: message._id,
+        sender: data.sender,
+        receiver: data.receiver,
+        text: data.text,
+        createdAt: message.createdAt
+      });
     } catch (error) {
       console.error('Message error:', error);
       socket.emit('message-error', { error: error.message });
@@ -118,10 +146,11 @@ io.on('connection', (socket) => {
     for (const [userId, socketId] of connectedUsers.entries()) {
       if (socketId === socket.id) {
         connectedUsers.delete(userId);
+        console.log('User disconnected:', userId);
         break;
       }
     }
-    console.log('User disconnected:', socket.id);
+    console.log('Socket disconnected:', socket.id);
   });
 });
 
