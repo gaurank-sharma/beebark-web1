@@ -5,7 +5,7 @@ const User = require('../models/User');
 const auth = require('../middleware/auth');
 const { upload, uploadToCloudinary } = require('../config/cloudinary');
 const { parseResume } = require('../utils/resumeParser');
-const { matchCandidatesWithJob, getJobRecommendations } = require('../utils/jobMatcher');
+const { matchCandidatesWithJobLLM, getJobRecommendationsLLM } = require('../utils/llmJobMatcher');
 const path = require('path');
 const fs = require('fs');
 
