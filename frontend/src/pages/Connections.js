@@ -8,6 +8,7 @@ import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
 import { FiSearch, FiUserPlus, FiUserCheck, FiMessageCircle, FiX, FiUsers } from 'react-icons/fi';
+import { API_URL } from '../config/api';
 
 const Connections = () => {
   const [suggestions, setSuggestions] = useState([]);
@@ -18,7 +19,6 @@ const Connections = () => {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [activeTab, setActiveTab] = useState('suggestions');
-  import { API_URL } from '../config/api'; // Auto-fixed
 
   const fetchSuggestions = useCallback(async () => {
     try {

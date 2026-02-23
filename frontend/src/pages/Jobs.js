@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { FiUpload, FiBriefcase, FiMapPin, FiDollarSign, FiFileText, FiAward } from 'react-icons/fi';
+import { API_URL } from '../config/api';
 
 const Jobs = () => {
   const [jobs, setJobs] = useState([]);
@@ -26,7 +27,6 @@ const Jobs = () => {
   const [uploadingResume, setUploadingResume] = useState(false);
   const [formData, setFormData] = useState({ title: '', description: '', company: '', location: '', salary: '' });
   const { user } = useAuth();
-  import { API_URL } from '../config/api'; // Auto-fixed
 
   useEffect(() => {
     fetchJobs();
