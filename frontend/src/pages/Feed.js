@@ -186,7 +186,7 @@ const Feed = () => {
                     <p className="text-xs font-medium">Add Story</p>
                   </div>
 
-                  {/* User Stories */}
+                  {/* User Stories - Only show real stories */}
                   {stories.map((storyGroup, idx) => (
                     <div 
                       key={idx} 
@@ -204,6 +204,13 @@ const Feed = () => {
                       <p className="text-xs truncate w-16">{storyGroup.author.name.split(' ')[0]}</p>
                     </div>
                   ))}
+                  
+                  {/* Show message if no stories */}
+                  {stories.length === 0 && (
+                    <div className="flex-1 flex items-center justify-center py-4">
+                      <p className="text-sm text-gray-500">No stories yet. Be the first to share!</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
