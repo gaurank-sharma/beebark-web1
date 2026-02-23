@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip, FiPhoneOff, FiMic, FiMicOff, FiVideoOff } from 'react-icons/fi';
+import { API_URL } from '../config/api';
 
 const Chat = () => {
   const [connections, setConnections] = useState([]);
@@ -32,7 +33,6 @@ const Chat = () => {
   const myVideo = useRef();
   const userVideo = useRef();
   const peerRef = useRef();
-  const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   useEffect(() => {
     fetchConnections();

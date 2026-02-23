@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from 'sonner';
 import { FiVideo, FiCalendar, FiClock, FiUsers, FiPlus } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
+import { API_URL } from '../config/api';
 
 const Meetings = () => {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -23,7 +24,6 @@ const Meetings = () => {
     participants: []
   });
   const navigate = useNavigate();
-  const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   useEffect(() => {
     fetchMeetings();
