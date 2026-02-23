@@ -73,12 +73,10 @@ router.get('/list', auth, async (req, res) => {
 router.get('/recommended', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
-    const userSkills = user.resume?.parsedData?.skills || user.skills || [];
-
     const allJobs = await Job.find({ status: 'active' })
       .populate('postedBy', 'name company profilePic');
 
-    const recommendations = await getJobRecommendations(userSkills, allJobs);
+    const recommendations = await getJobRecommendationsLLM(user, allJobs);
 
     res.json({ recommendations });
   } catch (error) {
