@@ -77,7 +77,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send-message', async (data) => {
-    console.log('Received message:', data);
+    console.log('📨 Received message:', data);
     try {
       const Message = require('./models/Message');
       const User = require('./models/User');
@@ -85,13 +85,13 @@ io.on('connection', (socket) => {
       // Validate sender is connected with receiver
       const sender = await User.findById(data.sender);
       if (!sender) {
-        console.error('Sender not found:', data.sender);
+        console.error('❌ Sender not found:', data.sender);
         socket.emit('message-error', { error: 'Sender not found' });
         return;
       }
       
       if (!sender.connections.includes(data.receiver)) {
-        console.error('Not connected with this user');
+        console.error('❌ Not connected with this user');
         socket.emit('message-error', { error: 'Not connected with this user' });
         return;
       }
@@ -104,7 +104,7 @@ io.on('connection', (socket) => {
       });
       await message.save();
       
-      console.log('Message saved to DB:', message._id);
+      console.log('✅ Message saved to DB:', message._id);
       
       const messageData = {
         _id: message._id.toString(),
@@ -116,21 +116,23 @@ io.on('connection', (socket) => {
       
       // Send to receiver if online
       const receiverSocketId = connectedUsers.get(data.receiver);
-      console.log('Looking for receiver:', data.receiver, 'Socket:', receiverSocketId);
+      console.log('🔍 Looking for receiver:', data.receiver);
+      console.log('🔍 Receiver Socket ID:', receiverSocketId);
+      console.log('🔍 All connected users:', Array.from(connectedUsers.entries()));
       
       if (receiverSocketId) {
         io.to(receiverSocketId).emit('receive-message', messageData);
-        console.log('Message sent to receiver socket:', receiverSocketId);
+        console.log('✅ Message sent to receiver socket:', receiverSocketId);
       } else {
-        console.log('Receiver not online');
+        console.log('⚠️ Receiver not online');
       }
       
       // Confirm to sender
       socket.emit('message-sent', messageData);
-      console.log('Message confirmed to sender');
+      console.log('✅ Message confirmed to sender');
       
     } catch (error) {
-      console.error('Message error:', error);
+      console.error('❌ Message error:', error);
       socket.emit('message-error', { error: error.message });
     }
   });
