@@ -11,6 +11,7 @@ import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { FiEdit2, FiSave, FiPlus, FiTrash2, FiBriefcase } from 'react-icons/fi';
+import { API_URL } from '../config/api';
 
 const Profile = () => {
   const { user, setUser } = useAuth();
@@ -31,7 +32,6 @@ const Profile = () => {
   });
   const [showAddExperience, setShowAddExperience] = useState(false);
   const [loading, setLoading] = useState(false);
-  import { API_URL } from '../config/api'; // Auto-fixed
 
   useEffect(() => {
     if (user) {

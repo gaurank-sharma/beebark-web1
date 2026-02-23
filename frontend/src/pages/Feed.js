@@ -12,6 +12,7 @@ import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { FiHeart, FiMessageCircle, FiSend, FiImage, FiPlus, FiX } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config/api';
 
 const Feed = () => {
   const [posts, setPosts] = useState([]);
@@ -28,7 +29,6 @@ const Feed = () => {
   const [storyMediaUrl, setStoryMediaUrl] = useState('');
   const [storyCaption, setStoryCaption] = useState('');
   const { user } = useAuth();
-  import { API_URL } from '../config/api'; // Auto-fixed
 
   useEffect(() => {
     fetchFeed();
