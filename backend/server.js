@@ -159,30 +159,104 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Meeting room events
+  // Meeting room events - Fixed for multi-user support
+  const meetingRooms = new Map(); // meetingId -> Set of {socketId, userId, userName}
+  
   socket.on('join-meeting', (data) => {
+    const { meetingId, userId, userName } = data;
     console.log('User joining meeting:', data);
-    socket.join(data.meetingId);
-    socket.to(data.meetingId).emit('user-joined', {
-      userId: data.userId,
-      userName: data.userName,
-      signal: data.signal
+    
+    // Join the socket.io room
+    socket.join(meetingId);
+    
+    // Store user info for this socket
+    socket.meetingId = meetingId;
+    socket.userId = userId;
+    socket.userName = userName;
+    
+    // Initialize room if it doesn't exist
+    if (!meetingRooms.has(meetingId)) {
+      meetingRooms.set(meetingId, new Set());
+    }
+    
+    const room = meetingRooms.get(meetingId);
+    
+    // Get existing participants BEFORE adding new user
+    const existingParticipants = Array.from(room).map(p => ({
+      socketId: p.socketId,
+      userId: p.userId,
+      userName: p.userName
+    }));
+    
+    console.log('Existing participants in meeting:', existingParticipants);
+    
+    // Add new participant to room
+    room.add({
+      socketId: socket.id,
+      userId,
+      userName
+    });
+    
+    // Send existing participants to the new joiner
+    socket.emit('existing-participants', existingParticipants);
+    
+    // Notify existing participants about the new user
+    socket.to(meetingId).emit('user-joined', {
+      socketId: socket.id,
+      userId,
+      userName
+    });
+    
+    console.log(`User ${userName} joined meeting ${meetingId}. Total participants: ${room.size}`);
+  });
+
+  socket.on('send-signal', (data) => {
+    const { to, signal } = data;
+    console.log('Sending signal from', socket.id, 'to', to);
+    io.to(to).emit('receive-signal', {
+      from: socket.id,
+      userId: socket.userId,
+      userName: socket.userName,
+      signal
     });
   });
 
-  socket.on('returning-signal', (data) => {
-    socket.to(data.to).emit('signal-returned', {
+  socket.on('return-signal', (data) => {
+    const { to, signal } = data;
+    console.log('Returning signal from', socket.id, 'to', to);
+    io.to(to).emit('signal-returned', {
+      from: socket.id,
       userId: socket.userId,
-      signal: data.signal
+      userName: socket.userName,
+      signal
     });
   });
 
   socket.on('leave-meeting', (data) => {
-    socket.leave(data.meetingId);
-    socket.to(data.meetingId).emit('user-left', data.userId);
+    const { meetingId, userId } = data;
+    console.log('User leaving meeting:', userId, meetingId);
+    
+    if (meetingRooms.has(meetingId)) {
+      const room = meetingRooms.get(meetingId);
+      // Remove user from room
+      for (const participant of room) {
+        if (participant.socketId === socket.id) {
+          room.delete(participant);
+          break;
+        }
+      }
+      // Clean up empty rooms
+      if (room.size === 0) {
+        meetingRooms.delete(meetingId);
+      }
+    }
+    
+    socket.leave(meetingId);
+    socket.to(meetingId).emit('user-left', { socketId: socket.id, userId });
   });
   
   socket.on('disconnect', () => {
+    // Remove from connected users
     for (const [userId, socketId] of connectedUsers.entries()) {
       if (socketId === socket.id) {
         connectedUsers.delete(userId);
@@ -190,6 +264,28 @@ io.on('connection', (socket) => {
         break;
       }
     }
+    
+    // Remove from meeting rooms if in one
+    if (socket.meetingId) {
+      const meetingId = socket.meetingId;
+      const userId = socket.userId;
+      
+      if (meetingRooms.has(meetingId)) {
+        const room = meetingRooms.get(meetingId);
+        for (const participant of room) {
+          if (participant.socketId === socket.id) {
+            room.delete(participant);
+            break;
+          }
+        }
+        if (room.size === 0) {
+          meetingRooms.delete(meetingId);
+        }
+      }
+      
+      socket.to(meetingId).emit('user-left', { socketId: socket.id, userId });
+    }
+    
     console.log('Socket disconnected:', socket.id);
   });
 });
