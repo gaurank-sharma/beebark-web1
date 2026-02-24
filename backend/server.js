@@ -27,6 +27,10 @@ mongoose.connect(`${mongoUrl}/${dbName}`)
 .then(() => console.log('MongoDB connected successfully'))
 .catch(err => console.error('MongoDB connection error:', err));
 
+app.get('/', (req, res) => {
+  res.json({ message: 'Welcome to BeeBark! The server is up and running.' });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
 });
