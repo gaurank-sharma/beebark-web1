@@ -389,8 +389,6 @@
 
 
 
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -398,9 +396,8 @@ import { useAuth } from '../context/AuthContext';
 import Peer from 'simple-peer';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
+import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiPhoneOff, FiCopy } from 'react-icons/fi';
 import { toast } from 'sonner';
-import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiMonitor, FiPhoneOff, FiCopy, FiUsers, FiMaximize, FiMinimize } from 'react-icons/fi';
 
 const webrtcConfig = {
   iceServers: [
@@ -409,92 +406,86 @@ const webrtcConfig = {
   ]
 };
 
-// Rock-solid Video Component that forces browsers to play the stream
-const ParticipantVideo = ({ stream, userName, isPinned, onPin, isScreenSharing, isLocal }) => {
+// --------------------------------------------------------
+// VIDEO COMPONENT
+// --------------------------------------------------------
+const ParticipantVideo = ({ stream, userName, isLocal }) => {
   const videoRef = useRef(null);
 
   useEffect(() => {
     if (videoRef.current && stream) {
+      console.log(`📺 [UI] Attaching stream for: ${userName}`);
       videoRef.current.srcObject = stream;
       
-      // AutoPlay bypass for strict browsers (fixes the black screen bug)
       videoRef.current.onloadedmetadata = () => {
-        videoRef.current.play().catch(e => console.warn("Autoplay delayed:", e));
+        console.log(`▶️ [UI] Playing video for: ${userName}`);
+        videoRef.current.play().catch(e => console.error(`❌ [UI] Autoplay blocked for ${userName}:`, e));
       };
     }
-  }, [stream]); 
+  }, [stream, userName]);
 
   return (
-    <Card className={`relative bg-gray-900 border-gray-700 overflow-hidden group ${isPinned ? 'w-full h-full' : 'w-full h-full aspect-video md:aspect-auto'}`}>
+    <Card className="relative bg-gray-900 border-gray-700 overflow-hidden w-full h-full aspect-video">
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        muted={isLocal} // CRITICAL: Mutes your own video so you don't hear an echo!
-        className={`w-full h-full ${isScreenSharing || isPinned ? 'object-contain' : 'object-cover'}`}
+        muted={isLocal} // MUST be true for local so you don't hear an echo
+        className="w-full h-full object-cover"
       />
-      <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-sm text-white flex items-center gap-2">
-        {userName} {isScreenSharing && "(Presenting)"}
+      <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-sm text-white">
+        {userName}
       </div>
-      <button 
-        onClick={onPin}
-        className="absolute top-4 right-4 bg-black/60 p-2 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80 z-10"
-      >
-        {isPinned ? <FiMinimize /> : <FiMaximize />}
-      </button>
     </Card>
   );
 };
 
+// --------------------------------------------------------
+// MAIN ROOM COMPONENT
+// --------------------------------------------------------
 const MeetingRoom = () => {
   const { meetingId } = useParams();
   const navigate = useNavigate();
   const socket = useSocket();
   const { user } = useAuth();
   
-  // UI States
-  const [remotePeers, setRemotePeers] = useState([]); // Array of { socketId, userName, stream }
+  const [remotePeers, setRemotePeers] = useState([]); // { socketId, userName, stream }
+  const [localStream, setLocalStream] = useState(null);
+  
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
-  const [screenSharing, setScreenSharing] = useState(false);
   
-  const [pinnedParticipant, setPinnedParticipant] = useState(null); 
-  const [remoteScreenSharers, setRemoteScreenSharers] = useState(new Set());
-  
-  // WebRTC Core States
-  const [localStream, setLocalStream] = useState(null);
-  const [screenStream, setScreenStream] = useState(null);
-  
-  const peersMap = useRef(new Map()); // Safely stores actual Peer instances outside of React State
-  const currentVideoTrackRef = useRef(null); 
+  const peersMap = useRef(new Map());
+  const hasJoined = useRef(false);
 
-  // 1. START CAMERA IMMEDIATELY
+  // 1. GET CAMERA
   useEffect(() => {
+    console.log("📷 [1] Requesting Camera & Mic permissions...");
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
+        console.log("✅ [1] Camera access granted!");
         setLocalStream(stream);
-        currentVideoTrackRef.current = stream.getVideoTracks()[0] || null;
       })
       .catch(err => {
-        console.error("Camera access denied:", err);
-        toast.error('Please allow camera & microphone access');
+        console.error("❌ [1] Camera access denied:", err);
+        toast.error('Failed to access camera/microphone');
       });
 
     return () => {
-      // Cleanup camera on unmount
       if (localStream) localStream.getTracks().forEach(t => t.stop());
-      if (screenStream) screenStream.getTracks().forEach(t => t.stop());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, []);
 
-  // 2. CONNECT TO SERVER & OTHER USERS
+  // 2. WEB RTC LOGIC
   useEffect(() => {
-    if (!socket || !localStream) return;
-    const currentUserId = user?.id || user?._id;
+    if (!socket || !localStream || hasJoined.current) return;
+    hasJoined.current = true;
+    console.log("🔌 [2] Socket and Camera ready. Initializing WebRTC...");
 
-    // Helper: Create WebRTC connection
     const createPeer = (targetSocketId, callerSocketId, userName, isInitiator) => {
+      console.log(`🤝 [Peer] Creating peer connection. Initiator: ${isInitiator} for user: ${userName}`);
+      
       const peer = new Peer({
         initiator: isInitiator,
         trickle: true,
@@ -503,224 +494,134 @@ const MeetingRoom = () => {
       });
 
       peer.on('signal', signal => {
-        socket.emit(isInitiator ? 'send-signal' : 'return-signal', {
-          to: isInitiator ? targetSocketId : callerSocketId,
-          signal
-        });
+        const emitType = isInitiator ? 'send-signal' : 'return-signal';
+        const target = isInitiator ? targetSocketId : callerSocketId;
+        console.log(`📡 [Signal] Emitting ${emitType} to ${target}`);
+        socket.emit(emitType, { to: target, signal });
       });
 
-      // WHEN VIDEO ARRIVES -> SAVE IT DIRECTLY TO REACT STATE
       peer.on('stream', stream => {
+        console.log(`🎉 [Stream] RECEIVED REMOTE VIDEO STREAM FROM: ${userName}!`);
         const idToUpdate = isInitiator ? targetSocketId : callerSocketId;
         setRemotePeers(prev => prev.map(p => p.socketId === idToUpdate ? { ...p, stream } : p));
       });
 
+      peer.on('error', err => console.error(`❌ [Peer] Error with ${userName}:`, err));
+      
       return peer;
     };
 
-    // Listeners
     socket.on('existing-participants', (users) => {
+      console.log(`👥 [Room] Found ${users.length} existing participants`, users);
       const newPeers = [];
+      
       users.forEach(u => {
         const peer = createPeer(u.socketId, null, u.userName, true);
         peersMap.current.set(u.socketId, peer);
         newPeers.push({ socketId: u.socketId, userName: u.userName, stream: null });
       });
+      
       setRemotePeers(newPeers);
     });
 
     socket.on('receive-signal', (data) => {
+      console.log(`📥 [Signal] Received incoming connection request from ${data.userName}`);
       let peer = peersMap.current.get(data.from);
+      
       if (!peer) {
         peer = createPeer(null, data.from, data.userName, false);
         peersMap.current.set(data.from, peer);
         setRemotePeers(prev => [...prev, { socketId: data.from, userName: data.userName, stream: null }]);
       }
+      
       peer.signal(data.signal);
     });
 
     socket.on('signal-returned', (data) => {
+      console.log(`✅ [Signal] Answer received from ${data.from}. Finalizing connection...`);
       const peer = peersMap.current.get(data.from);
       if (peer) peer.signal(data.signal);
     });
 
     socket.on('user-left', (data) => {
+      console.log(`🚪 [Room] User left: ${data.socketId}`);
       const peer = peersMap.current.get(data.socketId);
       if (peer) peer.destroy();
       peersMap.current.delete(data.socketId);
       setRemotePeers(prev => prev.filter(p => p.socketId !== data.socketId));
-      setPinnedParticipant(prev => prev === data.socketId ? null : prev);
     });
 
-    socket.on('peer-screen-share-status', (data) => {
-      setRemoteScreenSharers(prev => {
-        const newSet = new Set(prev);
-        if (data.isSharing) {
-          newSet.add(data.socketId);
-          setPinnedParticipant(data.socketId); 
-        } else {
-          newSet.delete(data.socketId);
-          setPinnedParticipant(prevPinned => prevPinned === data.socketId ? null : prevPinned);
-        }
-        return newSet;
-      });
-    });
-
-    // Finally, emit join!
-    socket.emit('join-meeting', { meetingId, userId: currentUserId, userName: user?.name });
+    console.log("🚀 [3] Emitting 'join-meeting' to server!");
+    socket.emit('join-meeting', { meetingId, userId: user?.id || user?._id, userName: user?.name });
 
     return () => {
-      socket.emit('leave-meeting', { meetingId, userId: currentUserId });
+      socket.emit('leave-meeting', { meetingId, userId: user?.id || user?._id });
       socket.off('existing-participants');
       socket.off('receive-signal');
       socket.off('signal-returned');
       socket.off('user-left');
-      socket.off('peer-screen-share-status');
       
       peersMap.current.forEach(peer => peer.destroy());
       peersMap.current.clear();
       setRemotePeers([]);
+      hasJoined.current = false;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, localStream]); 
+  }, [socket, localStream]);
 
-  // 3. HARDWARE CONTROLS
   const toggleAudio = () => {
     if (localStream) {
-      localStream.getAudioTracks().forEach(track => track.enabled = !audioEnabled);
+      localStream.getAudioTracks().forEach(t => t.enabled = !audioEnabled);
       setAudioEnabled(!audioEnabled);
     }
   };
 
   const toggleVideo = () => {
     if (localStream) {
-      localStream.getVideoTracks().forEach(track => track.enabled = !videoEnabled);
+      localStream.getVideoTracks().forEach(t => t.enabled = !videoEnabled);
       setVideoEnabled(!videoEnabled);
     }
   };
 
-  const shareScreen = async () => {
-    if (screenSharing) {
-      // STOP screen share
-      if (screenStream) screenStream.getTracks().forEach(track => track.stop());
-      
-      const cameraTrack = localStream.getVideoTracks()[0];
-      peersMap.current.forEach(peer => {
-        if (currentVideoTrackRef.current && cameraTrack) {
-          peer.replaceTrack(currentVideoTrackRef.current, cameraTrack, localStream);
-        }
-      });
-      
-      currentVideoTrackRef.current = cameraTrack; 
-      setScreenStream(null);
-      setScreenSharing(false);
-      socket.emit('screen-share-status', { isSharing: false });
-      setPinnedParticipant(prev => prev === 'local' ? null : prev);
-      toast.success('Camera restored');
-
-    } else {
-      // START screen share
-      try {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        const screenTrack = displayStream.getVideoTracks()[0];
-        
-        peersMap.current.forEach(peer => {
-          if (currentVideoTrackRef.current && screenTrack) {
-            peer.replaceTrack(currentVideoTrackRef.current, screenTrack, localStream);
-          }
-        });
-        
-        currentVideoTrackRef.current = screenTrack; 
-        setScreenStream(displayStream);
-        setScreenSharing(true);
-        setPinnedParticipant('local'); 
-        socket.emit('screen-share-status', { isSharing: true });
-        toast.success('Screen sharing started');
-        
-        // Listen for "Stop Sharing" browser button
-        screenTrack.onended = () => shareScreen();
-      } catch (err) {
-        toast.error('Failed to share screen');
-      }
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col">
-      <div className="bg-gray-800 p-4 flex items-center justify-between shadow-md z-10">
-        <h1 className="text-xl font-bold text-white">Meeting: {meetingId}</h1>
-        <Button onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Link copied!'); }} variant="outline" size="sm" className="bg-transparent text-white border-gray-600 hover:bg-gray-700">
+    <div className="min-h-screen bg-gray-900 flex flex-col p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-white">Meeting: {meetingId}</h1>
+        <Button onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Copied!'); }} variant="outline" className="text-white border-gray-600">
           <FiCopy className="mr-2" /> Copy Link
         </Button>
       </div>
 
-      <div className="flex-1 flex p-4 pb-24 gap-4 overflow-hidden h-[calc(100vh-80px)]">
-        {pinnedParticipant ? (
-          <div className="flex flex-col lg:flex-row w-full gap-4 h-full">
-            {/* Pinned Main View */}
-            <div className="flex-1 bg-gray-800 rounded-xl overflow-hidden shadow-lg h-full">
-              {pinnedParticipant === 'local' ? (
-                <ParticipantVideo stream={screenSharing ? screenStream : localStream} userName={`${user?.name} (You)`} isPinned={true} isLocal={true} isScreenSharing={screenSharing} onPin={() => setPinnedParticipant(null)} />
-              ) : (
-                remotePeers.filter(p => p.socketId === pinnedParticipant).map(p => (
-                  <ParticipantVideo key={p.socketId} stream={p.stream} userName={p.userName} isPinned={true} isLocal={false} isScreenSharing={remoteScreenSharers.has(p.socketId)} onPin={() => setPinnedParticipant(null)} />
-                ))
-              )}
-            </div>
-
-            {/* Sidebar View */}
-            <div className="lg:w-64 flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto shrink-0">
-              {pinnedParticipant !== 'local' && (
-                 <div className="h-40 shrink-0">
-                   <ParticipantVideo stream={screenSharing ? screenStream : localStream} userName={`${user?.name} (You)`} isPinned={false} isLocal={true} isScreenSharing={screenSharing} onPin={() => setPinnedParticipant('local')} />
-                 </div>
-              )}
-              {remotePeers.filter(p => p.socketId !== pinnedParticipant).map(p => (
-                <div className="h-40 shrink-0" key={p.socketId}>
-                  <ParticipantVideo stream={p.stream} userName={p.userName} isPinned={false} isLocal={false} isScreenSharing={remoteScreenSharers.has(p.socketId)} onPin={() => setPinnedParticipant(p.socketId)} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          /* Normal Grid View */
-          <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr h-full">
-            <ParticipantVideo 
-               stream={screenSharing ? screenStream : localStream} 
-               userName={`${user?.name} (You)`} 
-               isPinned={false} 
-               isLocal={true} 
-               isScreenSharing={screenSharing} 
-               onPin={() => setPinnedParticipant('local')} 
-            />
-            {remotePeers.map((p) => (
-              <ParticipantVideo 
-                 key={p.socketId} 
-                 stream={p.stream} 
-                 userName={p.userName} 
-                 isPinned={false} 
-                 isLocal={false}
-                 isScreenSharing={remoteScreenSharers.has(p.socketId)}
-                 onPin={() => setPinnedParticipant(p.socketId)}
-              />
-            ))}
-          </div>
-        )}
+      {/* VIDEO GRID */}
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr">
+        {/* Local Video */}
+        <ParticipantVideo 
+          stream={localStream} 
+          userName={`${user?.name} (You)`} 
+          isLocal={true} 
+        />
+        
+        {/* Remote Videos */}
+        {remotePeers.map(p => (
+          <ParticipantVideo 
+            key={p.socketId} 
+            stream={p.stream} 
+            userName={p.userName} 
+            isLocal={false} 
+          />
+        ))}
       </div>
 
-      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 border border-gray-700 rounded-full px-6 py-3 flex items-center space-x-4 shadow-2xl z-50">
-        <Button onClick={toggleAudio} variant={audioEnabled ? "outline" : "destructive"} size="lg" className={`rounded-full w-14 h-14 ${audioEnabled ? 'border-gray-600 bg-gray-700 hover:bg-gray-600 text-white' : ''}`}>
-          {audioEnabled ? <FiMic className="w-5 h-5"/> : <FiMicOff className="w-5 h-5"/>}
+      {/* CONTROLS */}
+      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-800 rounded-full px-6 py-3 flex items-center space-x-4">
+        <Button onClick={toggleAudio} variant={audioEnabled ? "outline" : "destructive"} className="rounded-full w-14 h-14 text-white">
+          {audioEnabled ? <FiMic size={24}/> : <FiMicOff size={24}/>}
         </Button>
-        <Button onClick={toggleVideo} variant={videoEnabled ? "outline" : "destructive"} size="lg" className={`rounded-full w-14 h-14 ${videoEnabled ? 'border-gray-600 bg-gray-700 hover:bg-gray-600 text-white' : ''}`}>
-          {videoEnabled ? <FiVideo className="w-5 h-5"/> : <FiVideoOff className="w-5 h-5"/>}
+        <Button onClick={toggleVideo} variant={videoEnabled ? "outline" : "destructive"} className="rounded-full w-14 h-14 text-white">
+          {videoEnabled ? <FiVideo size={24}/> : <FiVideoOff size={24}/>}
         </Button>
-        <Button onClick={shareScreen} variant={screenSharing ? "default" : "outline"} size="lg" className={`rounded-full w-14 h-14 ${!screenSharing ? 'border-gray-600 bg-gray-700 hover:bg-gray-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-          <FiMonitor className="w-5 h-5"/>
-        </Button>
-        <div className="w-px h-8 bg-gray-600 mx-2"></div>
-        <Button onClick={() => navigate('/meetings')} variant="destructive" size="lg" className="rounded-full w-14 h-14 bg-red-600 hover:bg-red-700">
-          <FiPhoneOff className="w-5 h-5"/>
+        <Button onClick={() => navigate('/meetings')} variant="destructive" className="rounded-full w-14 h-14">
+          <FiPhoneOff size={24}/>
         </Button>
       </div>
     </div>
