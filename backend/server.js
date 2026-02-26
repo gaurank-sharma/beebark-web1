@@ -218,6 +218,13 @@ io.on('connection', (socket) => {
     console.log(`User ${userName} joined meeting ${meetingId}. Total participants: ${room.size}`);
   });
 
+  socket.on('screen-share-status', (data) => {
+    socket.to(socket.meetingId).emit('peer-screen-share-status', {
+      socketId: socket.id,
+      isSharing: data.isSharing
+    });
+  });
+
   socket.on('send-signal', (data) => {
     const { to, signal } = data;
     console.log('Sending signal from', socket.id, 'to', to);
