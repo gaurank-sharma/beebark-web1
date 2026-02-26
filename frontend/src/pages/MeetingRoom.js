@@ -389,8 +389,6 @@
 
 
 
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -402,28 +400,34 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { toast } from 'sonner';
 import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiMonitor, FiPhoneOff, FiCopy, FiUsers, FiMaximize, FiMinimize } from 'react-icons/fi';
 
-// Just using STUN for now to ensure fast local connections during testing
 const webrtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' }
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
   ]
 };
 
-// Component for remote peers
 const ParticipantVideo = ({ peer, userName, isPinned, onPin, isScreenSharing }) => {
   const ref = useRef();
 
   useEffect(() => {
-    // FIX 1: If stream arrived before component mounted, attach it immediately!
-    if (peer && peer.streams && peer.streams.length > 0) {
+    // FIX 3: If the stream arrived BEFORE the component mounted, attach it immediately.
+    // This stops the "video disappearing" when moving from grid to pinned layout.
+    if (peer.streams && peer.streams[0]) {
       if (ref.current) ref.current.srcObject = peer.streams[0];
     }
 
-    // FIX 2: Listen for streams arriving after component mounts
-    peer.on('stream', stream => {
+    const handleStream = stream => {
       if (ref.current) ref.current.srcObject = stream;
-    });
+    };
+
+    peer.on('stream', handleStream);
+
+    return () => {
+      peer.off('stream', handleStream);
+    };
   }, [peer]);
 
   return (
@@ -432,14 +436,12 @@ const ParticipantVideo = ({ peer, userName, isPinned, onPin, isScreenSharing }) 
         playsInline
         autoPlay
         ref={ref}
-        // Use object-contain if sharing screen or pinned so it doesn't get cut
         className={`w-full h-full ${isScreenSharing || isPinned ? 'object-contain' : 'object-cover'}`}
       />
       <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-sm text-white flex items-center gap-2">
         {userName} {isScreenSharing && "(Presenting)"}
       </div>
       
-      {/* Pin Button */}
       <button 
         onClick={onPin}
         className="absolute top-4 right-4 bg-black/60 p-2 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80 z-10"
@@ -456,27 +458,26 @@ const MeetingRoom = () => {
   const socket = useSocket();
   const { user } = useAuth();
   
-  const [stream, setStream] = useState(null);
   const [peers, setPeers] = useState([]);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
   const [participants, setParticipants] = useState([]);
   
-  // Layout States
-  const [pinnedParticipant, setPinnedParticipant] = useState(null); // 'local' or socketId
+  const [pinnedParticipant, setPinnedParticipant] = useState(null); 
   const [remoteScreenSharers, setRemoteScreenSharers] = useState(new Set());
   
   const myVideo = useRef();
   const peersRef = useRef([]);
-  const streamRef = useRef(); 
+  
+  // FIX 2: Store the persistent camera/mic tracks separately from the active screen view
+  const localStreamRef = useRef(null); 
   const screenStreamRef = useRef(null);
 
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(currentStream => {
-        setStream(currentStream);
-        streamRef.current = currentStream;
+        localStreamRef.current = currentStream;
         if (myVideo.current) myVideo.current.srcObject = currentStream;
 
         if (socket && user) {
@@ -488,17 +489,10 @@ const MeetingRoom = () => {
       });
 
     return () => {
-      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+      if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
       if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(track => track.stop());
     };
   }, []); 
-
-  // Force local video to attach properly
-  useEffect(() => {
-    if (myVideo.current && stream) {
-      myVideo.current.srcObject = stream;
-    }
-  }, [stream, pinnedParticipant]); // Added pinnedParticipant so it re-attaches when layout changes
 
   useEffect(() => {
     if (!socket) return;
@@ -506,7 +500,7 @@ const MeetingRoom = () => {
     socket.on('existing-participants', (existingParticipants) => {
       const peersArray = [];
       existingParticipants.forEach(participant => {
-        const peer = createPeer(participant.socketId, participant.userId, participant.userName, streamRef.current);
+        const peer = createPeer(participant.socketId, participant.userId, participant.userName, localStreamRef.current);
         peersRef.current.push({
           socketId: participant.socketId, peerID: participant.userId, userName: participant.userName, peer
         });
@@ -517,13 +511,24 @@ const MeetingRoom = () => {
     });
 
     socket.on('user-joined', (data) => {
-      setParticipants(prev => [...prev, { id: data.userId, name: data.userName, socketId: data.socketId }]);
+      setParticipants(prev => {
+        if (prev.some(p => p.socketId === data.socketId)) return prev;
+        return [...prev, { id: data.userId, name: data.userName, socketId: data.socketId }];
+      });
     });
 
     socket.on('receive-signal', (data) => {
-      const peer = addPeer(data.signal, data.from, streamRef.current);
-      peersRef.current.push({ socketId: data.from, peerID: data.userId, userName: data.userName, peer });
-      setPeers([...peersRef.current]);
+      // FIX 1: Check if this user already exists. If yes, just pass the signal. Do NOT create a new peer.
+      // This solves the "6 duplicate screens" bug!
+      const existingPeerObj = peersRef.current.find(p => p.socketId === data.from);
+      
+      if (existingPeerObj) {
+        existingPeerObj.peer.signal(data.signal);
+      } else {
+        const peer = addPeer(data.signal, data.from, localStreamRef.current);
+        peersRef.current.push({ socketId: data.from, peerID: data.userId, userName: data.userName, peer });
+        setPeers([...peersRef.current]);
+      }
     });
 
     socket.on('signal-returned', (data) => {
@@ -538,19 +543,18 @@ const MeetingRoom = () => {
       setPeers([...peersRef.current]);
       setParticipants(prev => prev.filter(p => p.socketId !== data.socketId));
       
-      if (pinnedParticipant === data.socketId) setPinnedParticipant(null);
+      setPinnedParticipant(prev => prev === data.socketId ? null : prev);
     });
 
-    // Listen for remote screen sharing to auto-pin them
     socket.on('peer-screen-share-status', (data) => {
       setRemoteScreenSharers(prev => {
         const newSet = new Set(prev);
         if (data.isSharing) {
           newSet.add(data.socketId);
-          setPinnedParticipant(data.socketId); // Auto-pin the screen sharer
+          setPinnedParticipant(data.socketId); 
         } else {
           newSet.delete(data.socketId);
-          if (pinnedParticipant === data.socketId) setPinnedParticipant(null);
+          setPinnedParticipant(prevPinned => prevPinned === data.socketId ? null : prevPinned);
         }
         return newSet;
       });
@@ -569,12 +573,12 @@ const MeetingRoom = () => {
       peersRef.current.forEach(({ peer }) => peer.destroy());
       peersRef.current = [];
     };
-  }, [socket, pinnedParticipant]);
+  }, [socket]); // CRITICAL FIX: Removed pinnedParticipant from here. It was causing peers to drop/disconnect on layout changes.
 
   const createPeer = (userToSignal, userId, userName, currentStream) => {
     const peer = new Peer({
       initiator: true, 
-      trickle: true, // <--- CRITICAL FIX: Changed to true
+      trickle: true, 
       stream: currentStream,
       config: webrtcConfig 
     });
@@ -585,7 +589,7 @@ const MeetingRoom = () => {
   const addPeer = (incomingSignal, callerSocketId, currentStream) => {
     const peer = new Peer({
       initiator: false, 
-      trickle: true, // <--- CRITICAL FIX: Changed to true
+      trickle: true, 
       stream: currentStream,
       config: webrtcConfig 
     });
@@ -594,67 +598,74 @@ const MeetingRoom = () => {
     return peer;
   };
 
+  // FIX 2 (Continued): Mute the actual persistent hardware track, not the temporary screen track
   const toggleAudio = () => {
-    if (stream) {
-      const audioTrack = stream.getAudioTracks()[0];
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setAudioEnabled(audioTrack.enabled);
+        audioTrack.enabled = !audioEnabled;
+        setAudioEnabled(!audioEnabled);
       }
     }
   };
 
   const toggleVideo = () => {
-    if (stream) {
-      const videoTrack = stream.getVideoTracks()[0];
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
       if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setVideoEnabled(videoTrack.enabled);
+        videoTrack.enabled = !videoEnabled;
+        setVideoEnabled(!videoEnabled);
       }
     }
   };
 
   const shareScreen = async () => {
     if (screenSharing) {
+      // STOP screen share
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach(track => track.stop());
         screenStreamRef.current = null;
       }
       
-      const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      setStream(cameraStream);
-      streamRef.current = cameraStream;
-      myVideo.current.srcObject = cameraStream;
+      // Restore local camera UI
+      if (myVideo.current) myVideo.current.srcObject = localStreamRef.current;
       
-      const newVideoTrack = cameraStream.getVideoTracks()[0];
+      // Tell peers to switch back to camera track
+      const originalVideoTrack = localStreamRef.current.getVideoTracks()[0];
       peersRef.current.forEach(({ peer }) => {
-        const oldTrack = peer.streams[0].getVideoTracks()[0];
-        peer.replaceTrack(oldTrack, newVideoTrack, peer.streams[0]);
+        const currentlySentTrack = peer.streams[0]?.getVideoTracks()[0];
+        if (currentlySentTrack && originalVideoTrack) {
+          peer.replaceTrack(currentlySentTrack, originalVideoTrack, localStreamRef.current);
+        }
       });
       
       setScreenSharing(false);
       socket.emit('screen-share-status', { isSharing: false });
-      if (pinnedParticipant === 'local') setPinnedParticipant(null);
+      setPinnedParticipant(prev => prev === 'local' ? null : prev);
       toast.success('Camera restored');
 
     } else {
+      // START screen share
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         screenStreamRef.current = screenStream;
-        myVideo.current.srcObject = screenStream;
+        if (myVideo.current) myVideo.current.srcObject = screenStream;
         
-        const newVideoTrack = screenStream.getVideoTracks()[0];
+        const screenVideoTrack = screenStream.getVideoTracks()[0];
         peersRef.current.forEach(({ peer }) => {
-          const oldTrack = peer.streams[0].getVideoTracks()[0];
-          peer.replaceTrack(oldTrack, newVideoTrack, peer.streams[0]);
+          const originalVideoTrack = localStreamRef.current.getVideoTracks()[0];
+          if (originalVideoTrack && screenVideoTrack) {
+            peer.replaceTrack(originalVideoTrack, screenVideoTrack, localStreamRef.current);
+          }
         });
         
         setScreenSharing(true);
-        setPinnedParticipant('local'); // Auto pin yourself when sharing
+        setPinnedParticipant('local'); 
         socket.emit('screen-share-status', { isSharing: true });
         toast.success('Screen sharing started');
         
-        screenStream.getVideoTracks()[0].onended = () => shareScreen();
+        // Listen for "Stop Sharing" button built into Chrome/Edge
+        screenVideoTrack.onended = () => shareScreen();
       } catch (err) {
         toast.error('Failed to share screen');
       }
@@ -662,13 +673,12 @@ const MeetingRoom = () => {
   };
 
   const leaveMeeting = () => {
-    if (stream) stream.getTracks().forEach(track => track.stop());
+    if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
     if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(track => track.stop());
     socket.emit('leave-meeting', { meetingId, userId: user.id });
     navigate('/meetings');
   };
 
-  // Helper to get which videos to render
   const renderLocalVideo = (isPinned) => (
     <Card className={`relative bg-gray-900 border-gray-700 overflow-hidden group ${isPinned ? 'w-full h-full' : 'w-full h-full aspect-video md:aspect-auto'}`}>
       <video
@@ -698,7 +708,6 @@ const MeetingRoom = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col">
-      {/* Header */}
       <div className="bg-gray-800 p-4 flex items-center justify-between shadow-md z-10">
         <div>
           <h1 className="text-xl font-bold text-white">Meeting: {meetingId}</h1>
@@ -708,13 +717,9 @@ const MeetingRoom = () => {
         </Button>
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex p-4 pb-24 gap-4 overflow-hidden h-[calc(100vh-80px)]">
-        
-        {/* If someone is PINNED, use Google Meet Layout (1 big, others small sidebar) */}
         {pinnedParticipant ? (
           <div className="flex flex-col lg:flex-row w-full gap-4 h-full">
-            {/* Main Pinned View */}
             <div className="flex-1 bg-gray-800 rounded-xl overflow-hidden shadow-lg h-full">
               {pinnedParticipant === 'local' ? renderLocalVideo(true) : 
                 peers.filter(p => p.socketId === pinnedParticipant).map(p => (
@@ -726,7 +731,6 @@ const MeetingRoom = () => {
               ))}
             </div>
 
-            {/* Sidebar Thumbnails */}
             <div className="lg:w-64 flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto shrink-0">
               {pinnedParticipant !== 'local' && <div className="h-40 shrink-0">{renderLocalVideo(false)}</div>}
               {peers.filter(p => p.socketId !== pinnedParticipant).map(p => (
@@ -741,7 +745,6 @@ const MeetingRoom = () => {
             </div>
           </div>
         ) : (
-          /* Normal Grid View (Nobody Pinned) */
           <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr h-full">
             {renderLocalVideo(false)}
             {peers.map((peerObj, index) => (
@@ -756,7 +759,6 @@ const MeetingRoom = () => {
         )}
       </div>
 
-      {/* Bottom Controls */}
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 border border-gray-700 rounded-full px-6 py-3 flex items-center space-x-4 shadow-2xl z-50">
         <Button onClick={toggleAudio} variant={audioEnabled ? "outline" : "destructive"} size="lg" className={`rounded-full w-14 h-14 ${audioEnabled ? 'border-gray-600 bg-gray-700 hover:bg-gray-600 text-white' : ''}`}>
           {audioEnabled ? <FiMic className="w-5 h-5"/> : <FiMicOff className="w-5 h-5"/>}
