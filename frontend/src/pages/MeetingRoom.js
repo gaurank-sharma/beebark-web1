@@ -388,6 +388,9 @@
 // export default MeetingRoom;
 
 
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -415,7 +418,6 @@ const ParticipantVideo = ({ stream, userName, isPinned, onPin, isScreenSharing }
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
       
-      // Force play to bypass browser autoplay blocks
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
         playPromise.catch(e => console.warn("Autoplay blocked by browser:", e));
@@ -450,9 +452,8 @@ const MeetingRoom = () => {
   const socket = useSocket();
   const { user } = useAuth();
   
-  // UI & WebRTC States
   const [participants, setParticipants] = useState([]);
-  const [peers, setPeers] = useState([]); // Drives the UI Grid
+  const [peers, setPeers] = useState([]); 
   const [remoteStreams, setRemoteStreams] = useState({}); // Stores the actual video streams
   
   const [audioEnabled, setAudioEnabled] = useState(true);
@@ -466,7 +467,7 @@ const MeetingRoom = () => {
   const hasJoinedRoom = useRef(false);
   
   const myVideoRef = useRef();
-  const peersRef = useRef([]); // FIXED: Back to being a proper Array to prevent crashes!
+  const peersRef = useRef([]); 
   
   const localStreamRef = useRef(null); 
   const screenStreamRef = useRef(null);
@@ -496,7 +497,6 @@ const MeetingRoom = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
-  // Keep local video attached when switching layouts
   useEffect(() => {
     if (myVideoRef.current && localStreamRef.current) {
       myVideoRef.current.srcObject = screenSharing && screenStreamRef.current 
@@ -512,37 +512,27 @@ const MeetingRoom = () => {
 
     const currentUserId = user?.id || user?._id;
 
-    // Helper to create WebRTC connection safely
-    const createPeerConnection = (userToSignal, callerId, stream, isInitiator) => {
-      const peer = new Peer({
-        initiator: isInitiator,
-        trickle: true,
-        stream: stream,
-        config: webrtcConfig
-      });
-
-      peer.on('signal', signal => {
-        if (isInitiator) {
-          socket.emit('send-signal', { to: userToSignal, signal });
-        } else {
-          socket.emit('return-signal', { signal, to: callerId });
-        }
-      });
-
-      peer.on('stream', remoteStream => {
-        const targetId = isInitiator ? userToSignal : callerId;
-        // Save the remote stream directly into React state so the UI can grab it safely
-        setRemoteStreams(prev => ({ ...prev, [targetId]: remoteStream }));
-      });
-
-      peer.on('error', err => console.log("WebRTC Error:", err));
-      return peer;
+    // Helper to save incoming video/audio
+    const attachRemoteStream = (socketId, stream) => {
+      setRemoteStreams(prev => ({ ...prev, [socketId]: stream }));
     };
 
     socket.on('existing-participants', (existingParticipants) => {
       const peersArray = [];
       existingParticipants.forEach(participant => {
-        const peer = createPeerConnection(participant.socketId, null, localStreamRef.current, true);
+        const peer = new Peer({
+          initiator: true,
+          trickle: true,
+          stream: localStreamRef.current,
+          config: webrtcConfig
+        });
+
+        peer.on('signal', signal => socket.emit('send-signal', { to: participant.socketId, signal }));
+        
+        // THE MISSING LINE: Receive the video/audio stream!
+        peer.on('stream', stream => attachRemoteStream(participant.socketId, stream));
+        peer.on('error', err => console.log("WebRTC Error:", err));
+
         const peerObj = { socketId: participant.socketId, peerID: participant.userId, userName: participant.userName, peer };
         peersRef.current.push(peerObj);
         peersArray.push(peerObj);
@@ -562,7 +552,19 @@ const MeetingRoom = () => {
       let existingPeerObj = peersRef.current.find(p => p.socketId === data.from);
       
       if (!existingPeerObj) {
-        const peer = createPeerConnection(null, data.from, localStreamRef.current, false);
+        const peer = new Peer({
+          initiator: false,
+          trickle: true,
+          stream: localStreamRef.current,
+          config: webrtcConfig
+        });
+
+        peer.on('signal', signal => socket.emit('return-signal', { signal, to: data.from }));
+        
+        // THE MISSING LINE: Receive the video/audio stream!
+        peer.on('stream', stream => attachRemoteStream(data.from, stream));
+        peer.on('error', err => console.log("WebRTC Error:", err));
+
         existingPeerObj = { socketId: data.from, peerID: data.userId, userName: data.userName, peer };
         peersRef.current.push(existingPeerObj);
         setPeers([...peersRef.current]);
@@ -701,7 +703,7 @@ const MeetingRoom = () => {
     <Card className={`relative bg-gray-900 border-gray-700 overflow-hidden group ${isPinned ? 'w-full h-full' : 'w-full h-full aspect-video md:aspect-auto'}`}>
       <video
         ref={myVideoRef}
-        autoPlay playsInline muted // Muted so you don't hear an echo of your own room!
+        autoPlay playsInline muted 
         className={`w-full h-full ${screenSharing || isPinned ? 'object-contain' : 'object-cover'}`}
       />
       <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-sm text-white">
