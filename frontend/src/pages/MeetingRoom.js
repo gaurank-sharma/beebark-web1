@@ -389,7 +389,6 @@
 
 
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -401,12 +400,14 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { toast } from 'sonner';
 import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiMonitor, FiPhoneOff, FiCopy, FiUsers, FiMaximize, FiMinimize } from 'react-icons/fi';
 
+// Using Google's highly reliable STUN servers to guarantee connection
 const webrtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
   ]
 };
 
@@ -414,9 +415,14 @@ const ParticipantVideo = ({ stream, userName, isPinned, onPin, isScreenSharing }
   const ref = useRef();
 
   useEffect(() => {
-    // Safely attach stream. Re-run if screen sharing toggles to refresh the video element.
     if (ref.current && stream) {
       ref.current.srcObject = stream;
+      
+      // Force the browser to play the video (bypasses some strict autoplay blockers)
+      const playPromise = ref.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => console.error("Autoplay prevented:", error));
+      }
     }
   }, [stream, isScreenSharing]); 
 
@@ -457,26 +463,26 @@ const MeetingRoom = () => {
   const [pinnedParticipant, setPinnedParticipant] = useState(null); 
   const [remoteScreenSharers, setRemoteScreenSharers] = useState(new Set());
   
+  // Race condition trackers
+  const [localStreamReady, setLocalStreamReady] = useState(false);
+  const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
+  
   const myVideo = useRef();
   const peersRef = useRef([]);
-  
   const localStreamRef = useRef(null); 
   const screenStreamRef = useRef(null);
-  
-  // FIX: Track the currently outgoing video track so replaceTrack doesn't fail
   const currentVideoTrackRef = useRef(null); 
 
+  // 1. Get Camera Permissions FIRST
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(currentStream => {
         localStreamRef.current = currentStream;
-        currentVideoTrackRef.current = currentStream.getVideoTracks()[0]; // Store initial camera track
+        currentVideoTrackRef.current = currentStream.getVideoTracks()[0]; 
         
         if (myVideo.current) myVideo.current.srcObject = currentStream;
-
-        if (socket && user) {
-          socket.emit('join-meeting', { meetingId, userId: user.id, userName: user.name });
-        }
+        
+        setLocalStreamReady(true); // Signal that we are ready to join
       })
       .catch(err => {
         toast.error('Failed to access camera/microphone');
@@ -488,7 +494,17 @@ const MeetingRoom = () => {
     };
   }, []); 
 
-  // FIX: Safely attach the correct local video (camera vs screen) without overwriting
+  // 2. JOIN MEETING (Fixes the Race Condition)
+  useEffect(() => {
+    // Only join if Socket, User, and Camera are ALL fully ready!
+    if (socket && user && localStreamReady && !hasJoinedRoom) {
+      const userId = user.id || user._id; // Safely handle MongoDB ID
+      socket.emit('join-meeting', { meetingId, userId: userId, userName: user.name });
+      setHasJoinedRoom(true);
+    }
+  }, [socket, user, localStreamReady, hasJoinedRoom, meetingId]);
+
+  // Keep local video attached when layout changes
   useEffect(() => {
     if (myVideo.current) {
       myVideo.current.srcObject = screenSharing && screenStreamRef.current 
@@ -497,6 +513,7 @@ const MeetingRoom = () => {
     }
   }, [pinnedParticipant, screenSharing]); 
 
+  // 3. Socket Listeners
   useEffect(() => {
     if (!socket) return;
 
@@ -563,7 +580,7 @@ const MeetingRoom = () => {
 
     return () => {
       if(socket) {
-        socket.emit('leave-meeting', { meetingId, userId: user?.id });
+        socket.emit('leave-meeting', { meetingId, userId: user?.id || user?._id });
         socket.off('existing-participants');
         socket.off('user-joined');
         socket.off('receive-signal');
@@ -576,52 +593,54 @@ const MeetingRoom = () => {
     };
   }, [socket]); 
 
-  const attachRemoteStream = (peer, stream) => {
-    const peerObj = peersRef.current.find(p => p.peer === peer);
-    if (peerObj) {
-      peerObj.remoteStream = stream;
-      setPeers([...peersRef.current]); 
-    }
+  // Safely map incoming stream to React State
+  const attachRemoteStream = (socketId, stream) => {
+    setPeers(prevPeers => prevPeers.map(p => 
+      p.socketId === socketId ? { ...p, remoteStream: stream } : p
+    ));
   };
 
   const createPeer = (userToSignal, userId, userName, currentStream) => {
     const peer = new Peer({ initiator: true, trickle: true, stream: currentStream, config: webrtcConfig });
     peer.on('signal', signal => socket.emit('send-signal', { to: userToSignal, signal }));
-    peer.on('stream', stream => attachRemoteStream(peer, stream)); 
+    peer.on('stream', stream => attachRemoteStream(userToSignal, stream)); 
+    peer.on('error', err => console.error('Peer error:', err));
     return peer;
   };
 
   const addPeer = (incomingSignal, callerSocketId, currentStream) => {
     const peer = new Peer({ initiator: false, trickle: true, stream: currentStream, config: webrtcConfig });
     peer.on('signal', signal => socket.emit('return-signal', { signal, to: callerSocketId }));
-    peer.on('stream', stream => attachRemoteStream(peer, stream)); 
+    peer.on('stream', stream => attachRemoteStream(callerSocketId, stream)); 
+    peer.on('error', err => console.error('Peer error:', err));
     peer.signal(incomingSignal);
     return peer;
   };
 
+  // FIX: Force mute ALL audio tracks to guarantee silence
   const toggleAudio = () => {
+    const newAudioState = !audioEnabled;
+    
     if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioEnabled;
-        setAudioEnabled(!audioEnabled);
-      }
+      localStreamRef.current.getAudioTracks().forEach(track => track.enabled = newAudioState);
     }
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getAudioTracks().forEach(track => track.stop()); // Stop system audio if sharing
+    }
+    
+    setAudioEnabled(newAudioState);
   };
 
   const toggleVideo = () => {
+    const newVideoState = !videoEnabled;
     if (localStreamRef.current) {
-      const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoEnabled;
-        setVideoEnabled(!videoEnabled);
-      }
+      localStreamRef.current.getVideoTracks().forEach(track => track.enabled = newVideoState);
     }
+    setVideoEnabled(newVideoState);
   };
 
   const shareScreen = async () => {
     if (screenSharing) {
-      // STOP screen share
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach(track => track.stop());
         screenStreamRef.current = null;
@@ -629,37 +648,32 @@ const MeetingRoom = () => {
       
       const originalVideoTrack = localStreamRef.current.getVideoTracks()[0];
       
-      // FIX: Replace tracks using the precisely tracked currentVideoTrackRef
       peersRef.current.forEach(({ peer }) => {
         if (currentVideoTrackRef.current && originalVideoTrack) {
           peer.replaceTrack(currentVideoTrackRef.current, originalVideoTrack, localStreamRef.current);
         }
       });
       
-      currentVideoTrackRef.current = originalVideoTrack; // Update ref back to camera
-      
+      currentVideoTrackRef.current = originalVideoTrack; 
       setScreenSharing(false);
       socket.emit('screen-share-status', { isSharing: false });
       setPinnedParticipant(prev => prev === 'local' ? null : prev);
       toast.success('Camera restored');
 
     } else {
-      // START screen share
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         screenStreamRef.current = screenStream;
         
         const screenVideoTrack = screenStream.getVideoTracks()[0];
         
-        // FIX: Replace tracks using the precisely tracked currentVideoTrackRef
         peersRef.current.forEach(({ peer }) => {
           if (currentVideoTrackRef.current && screenVideoTrack) {
             peer.replaceTrack(currentVideoTrackRef.current, screenVideoTrack, localStreamRef.current);
           }
         });
         
-        currentVideoTrackRef.current = screenVideoTrack; // Update ref to screen track
-        
+        currentVideoTrackRef.current = screenVideoTrack; 
         setScreenSharing(true);
         setPinnedParticipant('local'); 
         socket.emit('screen-share-status', { isSharing: true });
@@ -675,7 +689,7 @@ const MeetingRoom = () => {
   const leaveMeeting = () => {
     if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
     if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(track => track.stop());
-    socket.emit('leave-meeting', { meetingId, userId: user.id });
+    socket.emit('leave-meeting', { meetingId, userId: user?.id || user?._id });
     navigate('/meetings');
   };
 
