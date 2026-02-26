@@ -391,7 +391,6 @@
 
 
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -403,21 +402,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { toast } from 'sonner';
 import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiMonitor, FiPhoneOff, FiCopy, FiUsers, FiMaximize, FiMinimize } from 'react-icons/fi';
 
-// CRITICAL: This fixes the connection drops on different networks!
+// Just using STUN for now to ensure fast local connections during testing
 const webrtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    { urls: 'stun:global.stun.twilio.com:3478' }
   ]
 };
 
@@ -426,6 +415,12 @@ const ParticipantVideo = ({ peer, userName, isPinned, onPin, isScreenSharing }) 
   const ref = useRef();
 
   useEffect(() => {
+    // FIX 1: If stream arrived before component mounted, attach it immediately!
+    if (peer && peer.streams && peer.streams.length > 0) {
+      if (ref.current) ref.current.srcObject = peer.streams[0];
+    }
+
+    // FIX 2: Listen for streams arriving after component mounts
     peer.on('stream', stream => {
       if (ref.current) ref.current.srcObject = stream;
     });
@@ -497,6 +492,13 @@ const MeetingRoom = () => {
       if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(track => track.stop());
     };
   }, []); 
+
+  // Force local video to attach properly
+  useEffect(() => {
+    if (myVideo.current && stream) {
+      myVideo.current.srcObject = stream;
+    }
+  }, [stream, pinnedParticipant]); // Added pinnedParticipant so it re-attaches when layout changes
 
   useEffect(() => {
     if (!socket) return;
@@ -572,9 +574,9 @@ const MeetingRoom = () => {
   const createPeer = (userToSignal, userId, userName, currentStream) => {
     const peer = new Peer({
       initiator: true, 
-      trickle: false,
+      trickle: true, // <--- CRITICAL FIX: Changed to true
       stream: currentStream,
-      config: webrtcConfig // <--- CRITICAL FOR DIFFERENT NETWORKS
+      config: webrtcConfig 
     });
     peer.on('signal', signal => socket.emit('send-signal', { to: userToSignal, signal }));
     return peer;
@@ -583,9 +585,9 @@ const MeetingRoom = () => {
   const addPeer = (incomingSignal, callerSocketId, currentStream) => {
     const peer = new Peer({
       initiator: false, 
-      trickle: false,
+      trickle: true, // <--- CRITICAL FIX: Changed to true
       stream: currentStream,
-      config: webrtcConfig // <--- CRITICAL FOR DIFFERENT NETWORKS
+      config: webrtcConfig 
     });
     peer.on('signal', signal => socket.emit('return-signal', { signal, to: callerSocketId }));
     peer.signal(incomingSignal);
