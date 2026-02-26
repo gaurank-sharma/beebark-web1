@@ -405,32 +405,32 @@ import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiMonitor, FiPhoneOff, FiCopy, Fi
 const webrtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+    { urls: 'stun:global.stun.twilio.com:3478' }
   ]
 };
 
-const ParticipantVideo = ({ stream, userName, isPinned, onPin, isScreenSharing }) => {
+// Rock-solid Video Component that forces browsers to play the stream
+const ParticipantVideo = ({ stream, userName, isPinned, onPin, isScreenSharing, isLocal }) => {
   const videoRef = useRef(null);
 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
       
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(e => console.warn("Autoplay blocked by browser:", e));
-      }
+      // AutoPlay bypass for strict browsers (fixes the black screen bug)
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current.play().catch(e => console.warn("Autoplay delayed:", e));
+      };
     }
-  }, [stream, isScreenSharing]); 
+  }, [stream]); 
 
   return (
     <Card className={`relative bg-gray-900 border-gray-700 overflow-hidden group ${isPinned ? 'w-full h-full' : 'w-full h-full aspect-video md:aspect-auto'}`}>
       <video
-        playsInline
-        autoPlay
         ref={videoRef}
+        autoPlay
+        playsInline
+        muted={isLocal} // CRITICAL: Mutes your own video so you don't hear an echo!
         className={`w-full h-full ${isScreenSharing || isPinned ? 'object-contain' : 'object-cover'}`}
       />
       <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-sm text-white flex items-center gap-2">
@@ -452,10 +452,8 @@ const MeetingRoom = () => {
   const socket = useSocket();
   const { user } = useAuth();
   
-  const [participants, setParticipants] = useState([]);
-  const [peers, setPeers] = useState([]); 
-  const [remoteStreams, setRemoteStreams] = useState({}); // Stores the actual video streams
-  
+  // UI States
+  const [remotePeers, setRemotePeers] = useState([]); // Array of { socketId, userName, stream }
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
@@ -463,135 +461,94 @@ const MeetingRoom = () => {
   const [pinnedParticipant, setPinnedParticipant] = useState(null); 
   const [remoteScreenSharers, setRemoteScreenSharers] = useState(new Set());
   
-  const [localStreamReady, setLocalStreamReady] = useState(false);
-  const hasJoinedRoom = useRef(false);
+  // WebRTC Core States
+  const [localStream, setLocalStream] = useState(null);
+  const [screenStream, setScreenStream] = useState(null);
   
-  const myVideoRef = useRef();
-  const peersRef = useRef([]); 
-  
-  const localStreamRef = useRef(null); 
-  const screenStreamRef = useRef(null);
+  const peersMap = useRef(new Map()); // Safely stores actual Peer instances outside of React State
   const currentVideoTrackRef = useRef(null); 
 
-  // 1. INITIALIZE CAMERA
+  // 1. START CAMERA IMMEDIATELY
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
-        localStreamRef.current = stream;
-        currentVideoTrackRef.current = stream.getVideoTracks()[0];
-        
-        if (myVideoRef.current) {
-          myVideoRef.current.srcObject = stream;
-        }
-        setLocalStreamReady(true);
+        setLocalStream(stream);
+        currentVideoTrackRef.current = stream.getVideoTracks()[0] || null;
       })
       .catch(err => {
         console.error("Camera access denied:", err);
-        toast.error('Failed to access camera/microphone');
+        toast.error('Please allow camera & microphone access');
       });
 
     return () => {
-      if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
-      if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(track => track.stop());
+      // Cleanup camera on unmount
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      if (screenStream) screenStream.getTracks().forEach(t => t.stop());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
+  // 2. CONNECT TO SERVER & OTHER USERS
   useEffect(() => {
-    if (myVideoRef.current && localStreamRef.current) {
-      myVideoRef.current.srcObject = screenSharing && screenStreamRef.current 
-        ? screenStreamRef.current 
-        : localStreamRef.current;
-    }
-  }, [screenSharing, pinnedParticipant, localStreamReady]);
-
-  // 2. SETUP SOCKETS & JOIN MEETING
-  useEffect(() => {
-    if (!socket || !localStreamReady || hasJoinedRoom.current) return;
-    hasJoinedRoom.current = true;
-
+    if (!socket || !localStream) return;
     const currentUserId = user?.id || user?._id;
 
-    // Helper to save incoming video/audio
-    const attachRemoteStream = (socketId, stream) => {
-      setRemoteStreams(prev => ({ ...prev, [socketId]: stream }));
+    // Helper: Create WebRTC connection
+    const createPeer = (targetSocketId, callerSocketId, userName, isInitiator) => {
+      const peer = new Peer({
+        initiator: isInitiator,
+        trickle: true,
+        stream: localStream,
+        config: webrtcConfig
+      });
+
+      peer.on('signal', signal => {
+        socket.emit(isInitiator ? 'send-signal' : 'return-signal', {
+          to: isInitiator ? targetSocketId : callerSocketId,
+          signal
+        });
+      });
+
+      // WHEN VIDEO ARRIVES -> SAVE IT DIRECTLY TO REACT STATE
+      peer.on('stream', stream => {
+        const idToUpdate = isInitiator ? targetSocketId : callerSocketId;
+        setRemotePeers(prev => prev.map(p => p.socketId === idToUpdate ? { ...p, stream } : p));
+      });
+
+      return peer;
     };
 
-    socket.on('existing-participants', (existingParticipants) => {
-      const peersArray = [];
-      existingParticipants.forEach(participant => {
-        const peer = new Peer({
-          initiator: true,
-          trickle: true,
-          stream: localStreamRef.current,
-          config: webrtcConfig
-        });
-
-        peer.on('signal', signal => socket.emit('send-signal', { to: participant.socketId, signal }));
-        
-        // THE MISSING LINE: Receive the video/audio stream!
-        peer.on('stream', stream => attachRemoteStream(participant.socketId, stream));
-        peer.on('error', err => console.log("WebRTC Error:", err));
-
-        const peerObj = { socketId: participant.socketId, peerID: participant.userId, userName: participant.userName, peer };
-        peersRef.current.push(peerObj);
-        peersArray.push(peerObj);
+    // Listeners
+    socket.on('existing-participants', (users) => {
+      const newPeers = [];
+      users.forEach(u => {
+        const peer = createPeer(u.socketId, null, u.userName, true);
+        peersMap.current.set(u.socketId, peer);
+        newPeers.push({ socketId: u.socketId, userName: u.userName, stream: null });
       });
-      setPeers(peersArray);
-      setParticipants(existingParticipants.map(p => ({ id: p.userId, name: p.userName, socketId: p.socketId })));
-    });
-
-    socket.on('user-joined', (data) => {
-      setParticipants(prev => {
-        if (prev.some(p => p.socketId === data.socketId)) return prev;
-        return [...prev, { id: data.userId, name: data.userName, socketId: data.socketId }];
-      });
+      setRemotePeers(newPeers);
     });
 
     socket.on('receive-signal', (data) => {
-      let existingPeerObj = peersRef.current.find(p => p.socketId === data.from);
-      
-      if (!existingPeerObj) {
-        const peer = new Peer({
-          initiator: false,
-          trickle: true,
-          stream: localStreamRef.current,
-          config: webrtcConfig
-        });
-
-        peer.on('signal', signal => socket.emit('return-signal', { signal, to: data.from }));
-        
-        // THE MISSING LINE: Receive the video/audio stream!
-        peer.on('stream', stream => attachRemoteStream(data.from, stream));
-        peer.on('error', err => console.log("WebRTC Error:", err));
-
-        existingPeerObj = { socketId: data.from, peerID: data.userId, userName: data.userName, peer };
-        peersRef.current.push(existingPeerObj);
-        setPeers([...peersRef.current]);
+      let peer = peersMap.current.get(data.from);
+      if (!peer) {
+        peer = createPeer(null, data.from, data.userName, false);
+        peersMap.current.set(data.from, peer);
+        setRemotePeers(prev => [...prev, { socketId: data.from, userName: data.userName, stream: null }]);
       }
-
-      existingPeerObj.peer.signal(data.signal);
+      peer.signal(data.signal);
     });
 
     socket.on('signal-returned', (data) => {
-      const item = peersRef.current.find(p => p.socketId === data.from);
-      if (item) item.peer.signal(data.signal);
+      const peer = peersMap.current.get(data.from);
+      if (peer) peer.signal(data.signal);
     });
 
     socket.on('user-left', (data) => {
-      const item = peersRef.current.find(p => p.socketId === data.socketId);
-      if (item) item.peer.destroy();
-      
-      peersRef.current = peersRef.current.filter(p => p.socketId !== data.socketId);
-      setPeers([...peersRef.current]);
-      setParticipants(prev => prev.filter(p => p.socketId !== data.socketId));
-      
-      setRemoteStreams(prev => {
-        const updated = { ...prev };
-        delete updated[data.socketId];
-        return updated;
-      });
-      
+      const peer = peersMap.current.get(data.socketId);
+      if (peer) peer.destroy();
+      peersMap.current.delete(data.socketId);
+      setRemotePeers(prev => prev.filter(p => p.socketId !== data.socketId));
       setPinnedParticipant(prev => prev === data.socketId ? null : prev);
     });
 
@@ -609,129 +566,89 @@ const MeetingRoom = () => {
       });
     });
 
-    // Fire the join event!
+    // Finally, emit join!
     socket.emit('join-meeting', { meetingId, userId: currentUserId, userName: user?.name });
 
     return () => {
       socket.emit('leave-meeting', { meetingId, userId: currentUserId });
       socket.off('existing-participants');
-      socket.off('user-joined');
       socket.off('receive-signal');
       socket.off('signal-returned');
       socket.off('user-left');
       socket.off('peer-screen-share-status');
       
-      peersRef.current.forEach(({ peer }) => { if (peer) peer.destroy(); });
-      peersRef.current = [];
-      setPeers([]);
-      setRemoteStreams({});
-      hasJoinedRoom.current = false;
+      peersMap.current.forEach(peer => peer.destroy());
+      peersMap.current.clear();
+      setRemotePeers([]);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, localStreamReady]); 
+  }, [socket, localStream]); 
 
-  // 3. MEDIA CONTROLS
+  // 3. HARDWARE CONTROLS
   const toggleAudio = () => {
-    const newAudioState = !audioEnabled;
-    if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach(track => track.enabled = newAudioState);
+    if (localStream) {
+      localStream.getAudioTracks().forEach(track => track.enabled = !audioEnabled);
+      setAudioEnabled(!audioEnabled);
     }
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getAudioTracks().forEach(track => track.enabled = newAudioState); 
-    }
-    setAudioEnabled(newAudioState);
   };
 
   const toggleVideo = () => {
-    const newVideoState = !videoEnabled;
-    if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach(track => track.enabled = newVideoState);
+    if (localStream) {
+      localStream.getVideoTracks().forEach(track => track.enabled = !videoEnabled);
+      setVideoEnabled(!videoEnabled);
     }
-    setVideoEnabled(newVideoState);
   };
 
   const shareScreen = async () => {
     if (screenSharing) {
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(track => track.stop());
-        screenStreamRef.current = null;
-      }
+      // STOP screen share
+      if (screenStream) screenStream.getTracks().forEach(track => track.stop());
       
-      const originalVideoTrack = localStreamRef.current.getVideoTracks()[0];
-      peersRef.current.forEach(({ peer }) => {
-        if (currentVideoTrackRef.current && originalVideoTrack) {
-          peer.replaceTrack(currentVideoTrackRef.current, originalVideoTrack, localStreamRef.current);
+      const cameraTrack = localStream.getVideoTracks()[0];
+      peersMap.current.forEach(peer => {
+        if (currentVideoTrackRef.current && cameraTrack) {
+          peer.replaceTrack(currentVideoTrackRef.current, cameraTrack, localStream);
         }
       });
       
-      currentVideoTrackRef.current = originalVideoTrack; 
+      currentVideoTrackRef.current = cameraTrack; 
+      setScreenStream(null);
       setScreenSharing(false);
       socket.emit('screen-share-status', { isSharing: false });
       setPinnedParticipant(prev => prev === 'local' ? null : prev);
       toast.success('Camera restored');
 
     } else {
+      // START screen share
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        screenStreamRef.current = screenStream;
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const screenTrack = displayStream.getVideoTracks()[0];
         
-        const screenVideoTrack = screenStream.getVideoTracks()[0];
-        peersRef.current.forEach(({ peer }) => {
-          if (currentVideoTrackRef.current && screenVideoTrack) {
-            peer.replaceTrack(currentVideoTrackRef.current, screenVideoTrack, localStreamRef.current);
+        peersMap.current.forEach(peer => {
+          if (currentVideoTrackRef.current && screenTrack) {
+            peer.replaceTrack(currentVideoTrackRef.current, screenTrack, localStream);
           }
         });
         
-        currentVideoTrackRef.current = screenVideoTrack; 
+        currentVideoTrackRef.current = screenTrack; 
+        setScreenStream(displayStream);
         setScreenSharing(true);
         setPinnedParticipant('local'); 
         socket.emit('screen-share-status', { isSharing: true });
         toast.success('Screen sharing started');
         
-        screenVideoTrack.onended = () => shareScreen();
+        // Listen for "Stop Sharing" browser button
+        screenTrack.onended = () => shareScreen();
       } catch (err) {
         toast.error('Failed to share screen');
       }
     }
   };
 
-  const leaveMeeting = () => {
-    navigate('/meetings'); 
-  };
-
-  const renderLocalVideo = (isPinned) => (
-    <Card className={`relative bg-gray-900 border-gray-700 overflow-hidden group ${isPinned ? 'w-full h-full' : 'w-full h-full aspect-video md:aspect-auto'}`}>
-      <video
-        ref={myVideoRef}
-        autoPlay playsInline muted 
-        className={`w-full h-full ${screenSharing || isPinned ? 'object-contain' : 'object-cover'}`}
-      />
-      <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-sm text-white">
-        {user?.name} (You) {screenSharing && "(Presenting)"}
-      </div>
-      {!videoEnabled && !screenSharing && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-0">
-          <Avatar className="w-24 h-24">
-            <AvatarImage src={user?.profilePic} />
-            <AvatarFallback className="bg-yellow-500 text-3xl text-black">{user?.name?.charAt(0)}</AvatarFallback>
-          </Avatar>
-        </div>
-      )}
-      <button 
-        onClick={() => setPinnedParticipant(isPinned ? null : 'local')}
-        className="absolute top-4 right-4 bg-black/60 p-2 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80 z-10"
-      >
-        {isPinned ? <FiMinimize /> : <FiMaximize />}
-      </button>
-    </Card>
-  );
-
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col">
       <div className="bg-gray-800 p-4 flex items-center justify-between shadow-md z-10">
-        <div>
-          <h1 className="text-xl font-bold text-white">Meeting: {meetingId}</h1>
-        </div>
+        <h1 className="text-xl font-bold text-white">Meeting: {meetingId}</h1>
         <Button onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Link copied!'); }} variant="outline" size="sm" className="bg-transparent text-white border-gray-600 hover:bg-gray-700">
           <FiCopy className="mr-2" /> Copy Link
         </Button>
@@ -740,46 +657,51 @@ const MeetingRoom = () => {
       <div className="flex-1 flex p-4 pb-24 gap-4 overflow-hidden h-[calc(100vh-80px)]">
         {pinnedParticipant ? (
           <div className="flex flex-col lg:flex-row w-full gap-4 h-full">
+            {/* Pinned Main View */}
             <div className="flex-1 bg-gray-800 rounded-xl overflow-hidden shadow-lg h-full">
-              {pinnedParticipant === 'local' ? renderLocalVideo(true) : 
-                peers.filter(p => p.socketId === pinnedParticipant).map(p => (
-                  <ParticipantVideo 
-                    key={p.socketId} 
-                    stream={remoteStreams[p.socketId]} 
-                    userName={p.userName} 
-                    isPinned={true} 
-                    isScreenSharing={remoteScreenSharers.has(p.socketId)}
-                    onPin={() => setPinnedParticipant(null)} 
-                  />
-              ))}
+              {pinnedParticipant === 'local' ? (
+                <ParticipantVideo stream={screenSharing ? screenStream : localStream} userName={`${user?.name} (You)`} isPinned={true} isLocal={true} isScreenSharing={screenSharing} onPin={() => setPinnedParticipant(null)} />
+              ) : (
+                remotePeers.filter(p => p.socketId === pinnedParticipant).map(p => (
+                  <ParticipantVideo key={p.socketId} stream={p.stream} userName={p.userName} isPinned={true} isLocal={false} isScreenSharing={remoteScreenSharers.has(p.socketId)} onPin={() => setPinnedParticipant(null)} />
+                ))
+              )}
             </div>
 
+            {/* Sidebar View */}
             <div className="lg:w-64 flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto shrink-0">
-              {pinnedParticipant !== 'local' && <div className="h-40 shrink-0">{renderLocalVideo(false)}</div>}
-              {peers.filter(p => p.socketId !== pinnedParticipant).map(p => (
+              {pinnedParticipant !== 'local' && (
+                 <div className="h-40 shrink-0">
+                   <ParticipantVideo stream={screenSharing ? screenStream : localStream} userName={`${user?.name} (You)`} isPinned={false} isLocal={true} isScreenSharing={screenSharing} onPin={() => setPinnedParticipant('local')} />
+                 </div>
+              )}
+              {remotePeers.filter(p => p.socketId !== pinnedParticipant).map(p => (
                 <div className="h-40 shrink-0" key={p.socketId}>
-                  <ParticipantVideo 
-                    stream={remoteStreams[p.socketId]} 
-                    userName={p.userName} 
-                    isPinned={false} 
-                    isScreenSharing={remoteScreenSharers.has(p.socketId)}
-                    onPin={() => setPinnedParticipant(p.socketId)} 
-                  />
+                  <ParticipantVideo stream={p.stream} userName={p.userName} isPinned={false} isLocal={false} isScreenSharing={remoteScreenSharers.has(p.socketId)} onPin={() => setPinnedParticipant(p.socketId)} />
                 </div>
               ))}
             </div>
           </div>
         ) : (
+          /* Normal Grid View */
           <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr h-full">
-            {renderLocalVideo(false)}
-            {peers.map((peerObj) => (
+            <ParticipantVideo 
+               stream={screenSharing ? screenStream : localStream} 
+               userName={`${user?.name} (You)`} 
+               isPinned={false} 
+               isLocal={true} 
+               isScreenSharing={screenSharing} 
+               onPin={() => setPinnedParticipant('local')} 
+            />
+            {remotePeers.map((p) => (
               <ParticipantVideo 
-                 key={peerObj.socketId} 
-                 stream={remoteStreams[peerObj.socketId]} 
-                 userName={peerObj.userName} 
-                 isScreenSharing={remoteScreenSharers.has(peerObj.socketId)}
+                 key={p.socketId} 
+                 stream={p.stream} 
+                 userName={p.userName} 
                  isPinned={false} 
-                 onPin={() => setPinnedParticipant(peerObj.socketId)}
+                 isLocal={false}
+                 isScreenSharing={remoteScreenSharers.has(p.socketId)}
+                 onPin={() => setPinnedParticipant(p.socketId)}
               />
             ))}
           </div>
@@ -797,7 +719,7 @@ const MeetingRoom = () => {
           <FiMonitor className="w-5 h-5"/>
         </Button>
         <div className="w-px h-8 bg-gray-600 mx-2"></div>
-        <Button onClick={leaveMeeting} variant="destructive" size="lg" className="rounded-full w-14 h-14 bg-red-600 hover:bg-red-700">
+        <Button onClick={() => navigate('/meetings')} variant="destructive" size="lg" className="rounded-full w-14 h-14 bg-red-600 hover:bg-red-700">
           <FiPhoneOff className="w-5 h-5"/>
         </Button>
       </div>
