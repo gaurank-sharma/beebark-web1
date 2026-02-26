@@ -533,7 +533,6 @@
 
 // export default Chat;
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Peer from 'simple-peer';
@@ -549,20 +548,28 @@ import { toast } from 'sonner';
 import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip, FiPhoneOff, FiMic, FiMicOff, FiVideoOff } from 'react-icons/fi';
 import { API_URL } from '../config/api';
 
+// CRITICAL: This fixes connection drops in direct chats
+const webrtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+  ]
+};
+
 const Chat = () => {
   const [connections, setConnections] = useState([]);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   
-  // Call States
   const [inCall, setInCall] = useState(false);
   const [callType, setCallType] = useState(null);
   const [receivingCall, setReceivingCall] = useState(false);
   const [caller, setCaller] = useState(null);
   const [callerSignal, setCallerSignal] = useState(null);
   
-  // Stream States - FIX: Added remoteStream state
   const [stream, setStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [audioMuted, setAudioMuted] = useState(false);
@@ -638,7 +645,6 @@ const Chat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // FIX: Safely attach streams once the modal renders the video tags
   useEffect(() => {
     if (inCall && myVideo.current && stream) {
       myVideo.current.srcObject = stream;
@@ -724,7 +730,12 @@ const Chat = () => {
       setCallType(type);
       setInCall(true);
 
-      const peer = new Peer({ initiator: true, trickle: false, stream: mediaStream });
+      const peer = new Peer({ 
+        initiator: true, 
+        trickle: false, 
+        stream: mediaStream,
+        config: webrtcConfig // <--- STUN/TURN APPLIED HERE
+      });
 
       peer.on('signal', (signal) => {
         socket.emit('call-user', {
@@ -735,7 +746,6 @@ const Chat = () => {
         });
       });
 
-      // FIX: Set remote stream to state instead of directly attaching to null ref
       peer.on('stream', (rStream) => {
         setRemoteStream(rStream);
       });
@@ -753,13 +763,17 @@ const Chat = () => {
       setInCall(true);
       setReceivingCall(false);
 
-      const peer = new Peer({ initiator: false, trickle: false, stream: mediaStream });
+      const peer = new Peer({ 
+        initiator: false, 
+        trickle: false, 
+        stream: mediaStream,
+        config: webrtcConfig // <--- STUN/TURN APPLIED HERE
+      });
 
       peer.on('signal', (signal) => {
         socket.emit('answer-call', { signal: signal, to: caller });
       });
 
-      // FIX: Set remote stream to state
       peer.on('stream', (rStream) => {
         setRemoteStream(rStream);
       });
