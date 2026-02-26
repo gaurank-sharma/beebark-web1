@@ -393,6 +393,7 @@ if (typeof window !== 'undefined') {
     setTimeout(() => callback(...args), 0);
   };
 }
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
@@ -400,8 +401,9 @@ import { useAuth } from '../context/AuthContext';
 import Peer from 'simple-peer';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiPhoneOff, FiCopy } from 'react-icons/fi';
+import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { toast } from 'sonner';
+import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiMonitor, FiPhoneOff, FiCopy, FiUsers, FiMaximize, FiMinimize } from 'react-icons/fi';
 
 const webrtcConfig = {
   iceServers: [
