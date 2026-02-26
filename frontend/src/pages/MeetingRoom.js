@@ -387,7 +387,12 @@
 
 // export default MeetingRoom;
 
-
+if (typeof window !== 'undefined') {
+  window.process = window.process || {};
+  window.process.nextTick = function(callback, ...args) {
+    setTimeout(() => callback(...args), 0);
+  };
+}
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
