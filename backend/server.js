@@ -40,18 +40,23 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(sanitizeRequest);
 
-const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017';
-const dbName = process.env.DB_NAME || 'social_network_db';
+// Use the raw MONGO_URL as-is and pass the database via the `dbName` option.
+// (Concatenating "/DB_NAME" breaks strings that contain a query like "/?appName=...".)
+const rawMongoUrl = (process.env.MONGO_URL || 'mongodb://localhost:27017').trim();
+// Strip any trailing slash / path before the query so SRV strings stay valid
+const mongoUrl = rawMongoUrl.replace(/\/+(\?|$)/, '$1');
+const dbName = (process.env.DB_NAME || 'social_network_db').trim();
 
 if (!process.env.MONGO_URL) {
   console.error('⚠️  MONGO_URL is not set — falling back to localhost, which will fail in the cloud.');
 }
 
 mongoose
-  .connect(`${mongoUrl}/${dbName}`, {
+  .connect(mongoUrl, {
+    dbName,
     serverSelectionTimeoutMS: 8000 // fail fast with a clear error instead of buffering for 10s
   })
-  .then(() => console.log('✅ MongoDB connected successfully'))
+  .then(() => console.log(`✅ MongoDB connected successfully (db: ${dbName})`))
   .catch((err) => {
     // Surface the real reason (bad host / auth / IP allowlist) in the logs
     console.error('❌ MongoDB connection error:', err.message);
