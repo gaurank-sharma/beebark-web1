@@ -15,6 +15,14 @@ const BRAND = {
 
 const APP_URL = () => process.env.APP_URL || 'http://localhost:3000';
 
+// Mail is sent through the Vercel relay (whose network allows outbound SMTP).
+// Defaults to the deployed relay; override with MAIL_SERVICE_URL, or set it to
+// an empty string to force direct SMTP.
+const MAIL_SERVICE_URL =
+  process.env.MAIL_SERVICE_URL !== undefined
+    ? process.env.MAIL_SERVICE_URL
+    : 'https://beebark-mail-service.vercel.app';
+
 let cachedTransporter = null;
 const getTransporter = () => {
   if (cachedTransporter) return cachedTransporter;
@@ -106,8 +114,8 @@ const send = async ({ to, subject, html }) => {
   // If a mail relay is configured (e.g. a Vercel function whose network allows
   // outbound SMTP), send through it over HTTPS — useful when the backend host
   // blocks SMTP (Render free tier). Otherwise send via SMTP directly.
-  if (process.env.MAIL_SERVICE_URL) {
-    const base = process.env.MAIL_SERVICE_URL.replace(/\/+$/, '');
+  if (MAIL_SERVICE_URL) {
+    const base = MAIL_SERVICE_URL.replace(/\/+$/, '');
     await axios.post(
       `${base}/api/send`,
       { to, subject, html },
