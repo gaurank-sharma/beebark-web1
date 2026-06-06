@@ -43,9 +43,22 @@ app.use(sanitizeRequest);
 const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017';
 const dbName = process.env.DB_NAME || 'social_network_db';
 
-mongoose.connect(`${mongoUrl}/${dbName}`)
-.then(() => debug('MongoDB connected successfully'))
-.catch(err => console.error('MongoDB connection error:', err));
+if (!process.env.MONGO_URL) {
+  console.error('⚠️  MONGO_URL is not set — falling back to localhost, which will fail in the cloud.');
+}
+
+mongoose
+  .connect(`${mongoUrl}/${dbName}`, {
+    serverSelectionTimeoutMS: 8000 // fail fast with a clear error instead of buffering for 10s
+  })
+  .then(() => console.log('✅ MongoDB connected successfully'))
+  .catch((err) => {
+    // Surface the real reason (bad host / auth / IP allowlist) in the logs
+    console.error('❌ MongoDB connection error:', err.message);
+  });
+
+mongoose.connection.on('error', (err) => console.error('❌ MongoDB error:', err.message));
+mongoose.connection.on('disconnected', () => console.error('⚠️  MongoDB disconnected'));
 
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to BeeBark! The server is up and running.' });
