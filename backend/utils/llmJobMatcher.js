@@ -2,8 +2,13 @@ const axios = require('axios');
 
 // LLM-powered job matching
 const matchCandidatesWithJobLLM = async (job, candidates) => {
-  const LLM_KEY = process.env.EMERGENT_LLM_KEY || 'sk-emergent-e6644A6E50166B3A02';
-  
+  const LLM_KEY = process.env.OPENAI_API_KEY;
+
+  // Without an LLM key, use deterministic keyword matching instead of failing requests
+  if (!LLM_KEY) {
+    return fallbackMatching(job, candidates);
+  }
+
   try {
     const candidateSummaries = candidates.map((candidate, idx) => {
       const resume = candidate.resume || {};
@@ -87,8 +92,13 @@ Respond ONLY with a JSON array in this exact format:
 
 // LLM-powered job recommendations
 const getJobRecommendationsLLM = async (user, allJobs) => {
-  const LLM_KEY = process.env.EMERGENT_LLM_KEY || 'sk-emergent-e6644A6E50166B3A02';
-  
+  const LLM_KEY = process.env.OPENAI_API_KEY;
+
+  // Without an LLM key, use deterministic keyword matching instead of failing requests
+  if (!LLM_KEY) {
+    return fallbackRecommendations(user, allJobs);
+  }
+
   try {
     const userResume = user.resume || {};
     const userSkills = (userResume.parsedData?.skills || userResume.skills || user.skills || []).join(', ');

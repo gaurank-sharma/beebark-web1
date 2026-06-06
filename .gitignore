@@ -77,40 +77,23 @@ agenthub/agents/youtube/db
 .cache/
 
 # Mobile development
-android-sdk/ frontend/node_modules/.cache/default-development/0.pack
--e 
-# Environment files
+android-sdk/
+
+# Environment files (keep .env.example tracked as a template)
 *.env
 *.env.*
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/6.pack
-frontend/node_modules/.cache/default-development/8.pack
-frontend/node_modules/.cache/default-development/9.pack
-frontend/node_modules/.cache/default-development/10.pack
-frontend/node_modules/.cache/default-development/12.pack
-frontend/node_modules/.cache/default-development/0.pack
-frontend/node_modules/.cache/default-development/1.pack
-frontend/node_modules/.cache/default-development/2.pack
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/3.pack
-frontend/node_modules/.cache/default-development/5.pack
-frontend/node_modules/.cache/default-development/4.pack
-frontend/node_modules/.cache/default-development/7.pack
--e 
-# Environment files
-*.env
-*.env.*
+!*.env.example
+!.env.example
+
+# Internal docs / scratch / specs (not part of the deployed app)
+/.gitconfig
+/memory/
+/test_reports/
+/tests/
+/Authentication-and-Onboarding-System-Phase-1.pdf
+/BEEBARK_COMPLETE_DOCUMENTATION.md
+/COMPLETE_DOCUMENTATION.md
+/FINAL_STATUS.md
+/PHASE_1_COMPLETE.md
+/PRODUCTION_PLAN.md
+/test_result.md

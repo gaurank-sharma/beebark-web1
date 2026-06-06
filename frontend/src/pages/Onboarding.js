@@ -1,0 +1,298 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { toast } from 'sonner';
+import { FaCheck, FaArrowLeft, FaTimes } from 'react-icons/fa';
+import ImageUpload from '../components/ImageUpload';
+import { ROLES } from '../config/roles';
+import { INTENTS, INDUSTRIES } from '../config/onboarding';
+
+const TOTAL_STEPS = 4;
+
+const toggle = (list, value) =>
+  list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+
+// Large selectable option card (modern full-screen wizard style)
+const OptionCard = ({ active, onClick, title, description, icon: Icon, testId }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    data-testid={testId}
+    className={`group relative flex items-center gap-4 w-full rounded-2xl border-2 px-6 py-5 text-left transition-all duration-200 ${
+      active
+        ? 'border-yellow-400 bg-yellow-50 shadow-sm'
+        : 'border-gray-200 bg-white hover:border-yellow-300 hover:bg-gray-50'
+    }`}
+  >
+    {Icon && (
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-colors ${active ? 'bg-yellow-400 text-black' : 'bg-yellow-100 text-black group-hover:bg-yellow-200'}`}>
+        <Icon className="text-lg" />
+      </span>
+    )}
+    <span className="flex-1">
+      <span className="block text-base font-semibold text-black">{title}</span>
+      {description && <span className="mt-0.5 block text-sm text-gray-500">{description}</span>}
+    </span>
+    <span className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all ${active ? 'border-yellow-400 bg-yellow-400 text-black' : 'border-gray-300 text-transparent'}`}>
+      <FaCheck className="text-[10px]" />
+    </span>
+  </button>
+);
+
+const Onboarding = () => {
+  const navigate = useNavigate();
+  const { user, updateOnboarding } = useAuth();
+
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  const [role, setRole] = useState(user?.role && ['student', 'professional', 'firm'].includes(user.role) ? user.role : '');
+  const [intent, setIntent] = useState(user?.intent || []);
+  const [industries, setIndustries] = useState(user?.industries || []);
+  const [profilePic, setProfilePic] = useState(user?.profilePic || '');
+  const [bio, setBio] = useState(user?.bio || '');
+  const [location, setLocation] = useState(user?.location || '');
+  const [skills, setSkills] = useState(user?.skills || []);
+  const [skillInput, setSkillInput] = useState('');
+
+  const canContinue =
+    (step === 0 && !!role) ||
+    (step === 1 && intent.length > 0) ||
+    (step === 2 && industries.length > 0) ||
+    step === 3;
+
+  const next = () => {
+    if (!canContinue) return;
+    setStep((s) => s + 1);
+  };
+
+  const back = () => setStep((s) => Math.max(0, s - 1));
+
+  const addSkill = () => {
+    const v = skillInput.trim();
+    if (v && !skills.includes(v)) setSkills([...skills, v]);
+    setSkillInput('');
+  };
+
+  const handleSkillKey = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addSkill();
+    }
+  };
+
+  const finish = async () => {
+    setSaving(true);
+    try {
+      await updateOnboarding({ role, intent, industries, bio, location, skills, profilePic, complete: true });
+      toast.success("You're all set!");
+      navigate('/dashboard');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Could not save. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const STEP_META = [
+    { title: 'What best describes you?', subtitle: 'This personalizes your BeeBark experience.' },
+    { title: 'What brings you to BeeBark?', subtitle: 'Select all that apply.' },
+    { title: 'Your industry focus', subtitle: 'Choose the fields you work in or care about.' },
+    { title: 'Complete your profile', subtitle: 'Help others recognize you — you can skip this for now.' }
+  ];
+
+  const meta = STEP_META[step];
+
+  return (
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* Top progress bar */}
+      <div className="w-full px-5 pt-8">
+        <div className="mx-auto max-w-3xl">
+          <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-amber-500 transition-all duration-500 ease-out"
+              style={{ width: `${((step + 1) / TOTAL_STEPS) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Centered content */}
+      <div className="flex-1 flex items-center justify-center px-5 py-10">
+        <div className="w-full max-w-3xl animate-fadeIn" key={step}>
+          <h1 className="text-center text-3xl sm:text-4xl font-bold text-black">{meta.title}</h1>
+          <p className="mt-3 text-center text-gray-500">{meta.subtitle}</p>
+
+          <div className="mt-10">
+            {/* Step 1 — Role (single select) */}
+            {step === 0 && (
+              <div className="grid sm:grid-cols-2 gap-4" data-testid="onboarding-role">
+                {ROLES.map((r) => (
+                  <OptionCard
+                    key={r.value}
+                    active={role === r.value}
+                    onClick={() => setRole(r.value)}
+                    title={r.label}
+                    description={r.tagline}
+                    icon={r.icon}
+                    testId={`role-${r.value}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Step 2 — Intent (multi select) */}
+            {step === 1 && (
+              <div className="grid sm:grid-cols-2 gap-4" data-testid="onboarding-intent">
+                {INTENTS.map((it) => (
+                  <OptionCard
+                    key={it.value}
+                    active={intent.includes(it.value)}
+                    onClick={() => setIntent(toggle(intent, it.value))}
+                    title={it.label}
+                    description={it.tagline}
+                    icon={it.icon}
+                    testId={`intent-${it.value}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Step 3 — Industry (multi select) */}
+            {step === 2 && (
+              <div className="grid sm:grid-cols-2 gap-4" data-testid="onboarding-industry">
+                {INDUSTRIES.map((ind) => (
+                  <OptionCard
+                    key={ind.value}
+                    active={industries.includes(ind.value)}
+                    onClick={() => setIndustries(toggle(industries, ind.value))}
+                    title={ind.label}
+                    testId={`industry-${ind.value}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Step 4 — Profile */}
+            {step === 3 && (
+              <div className="mx-auto max-w-xl space-y-6" data-testid="onboarding-profile">
+                <div>
+                  <label className="block text-sm font-medium text-black mb-2">Profile photo</label>
+                  {profilePic ? (
+                    <div className="flex items-center gap-4">
+                      <img src={profilePic} alt="Profile" className="h-20 w-20 rounded-full object-cover border" />
+                      <button type="button" onClick={() => setProfilePic('')} className="text-sm text-gray-500 hover:text-black">
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <ImageUpload onUploadComplete={(url) => setProfilePic(url)} />
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-black mb-1">Bio</label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    rows={3}
+                    maxLength={500}
+                    placeholder="A short line about what you do"
+                    className="w-full rounded-xl border-2 border-gray-200 p-3 text-sm focus:border-yellow-400 focus:outline-none resize-none"
+                    data-testid="bio-input"
+                  />
+                  <p className="mt-1 text-xs text-gray-400 text-right">{bio.length}/500</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-black mb-1">Location</label>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="City, Country"
+                    className="w-full rounded-xl border-2 border-gray-200 p-3 text-sm focus:border-yellow-400 focus:outline-none"
+                    data-testid="location-input"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-black mb-1">Skills / interests</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={skillInput}
+                      onChange={(e) => setSkillInput(e.target.value)}
+                      onKeyDown={handleSkillKey}
+                      placeholder="Type a skill and press Enter"
+                      className="flex-1 rounded-xl border-2 border-gray-200 p-3 text-sm focus:border-yellow-400 focus:outline-none"
+                      data-testid="skill-input"
+                    />
+                    <button type="button" onClick={addSkill} className="btn-black rounded-xl px-4 text-sm">Add</button>
+                  </div>
+                  {skills.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {skills.map((s) => (
+                        <span key={s} className="inline-flex items-center gap-1.5 bg-yellow-100 text-black text-xs font-medium px-3 py-1.5 rounded-full">
+                          {s}
+                          <button type="button" onClick={() => setSkills(skills.filter((x) => x !== s))} aria-label={`Remove ${s}`}>
+                            <FaTimes className="text-[10px]" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom action bar */}
+      <div className="sticky bottom-0 w-full border-t border-gray-100 bg-white/90 backdrop-blur px-5 py-5">
+        <div className="mx-auto max-w-3xl flex items-center gap-4">
+          {step > 0 ? (
+            <button type="button" onClick={back} className="flex items-center gap-2 text-sm text-gray-500 hover:text-black px-2 shrink-0">
+              <FaArrowLeft className="text-xs" /> Back
+            </button>
+          ) : (
+            <span className="w-12" />
+          )}
+
+          {step === 3 && (
+            <button type="button" onClick={finish} disabled={saving} className="text-sm text-gray-500 hover:text-black disabled:opacity-50 shrink-0">
+              Skip for now
+            </button>
+          )}
+
+          <div className="flex-1" />
+
+          {step < TOTAL_STEPS - 1 ? (
+            <button
+              type="button"
+              onClick={next}
+              disabled={!canContinue}
+              className="w-full max-w-xs rounded-full bg-yellow-400 py-3.5 font-semibold text-black transition-all hover:bg-yellow-500 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+              data-testid="onboarding-next"
+            >
+              Continue
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={finish}
+              disabled={saving}
+              className="w-full max-w-xs rounded-full bg-yellow-400 py-3.5 font-semibold text-black transition-all hover:bg-yellow-500 disabled:opacity-50"
+              data-testid="onboarding-finish"
+            >
+              {saving ? 'Saving...' : 'Finish'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Onboarding;

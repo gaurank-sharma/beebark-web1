@@ -16,6 +16,11 @@ const auth = async (req, res, next) => {
       return res.status(401).json({ error: 'User not found' });
     }
 
+    // Reject tokens issued before a "log out everywhere" action
+    if (typeof decoded.tokenVersion === 'number' && decoded.tokenVersion !== (user.tokenVersion || 0)) {
+      return res.status(401).json({ error: 'Session expired. Please log in again.' });
+    }
+
     req.user = user;
     req.userId = user._id;
     next();

@@ -6,13 +6,33 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { FiSearch, FiBell, FiMoon, FiLogOut } from 'react-icons/fi';
 import { Badge } from './ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from './ui/dropdown-menu';
+
+const ROLE_LABELS = {
+  student: 'Student',
+  professional: 'Professional',
+  firm: 'Firm',
+  recruiter: 'Recruiter',
+  company: 'Firm'
+};
 
 const TopBar = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, logoutAll } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
     logout();
+    navigate('/login');
+  };
+
+  const handleLogoutAll = async () => {
+    await logoutAll();
     navigate('/login');
   };
 
@@ -56,8 +76,7 @@ const TopBar = () => {
           <div className="text-right">
             <p className="font-semibold text-sm text-black">{user?.name}</p>
             <p className="text-xs text-slate-500">
-              {user?.role === 'recruiter' ? 'Recruiter' : 'Professional'} • 
-              <span className="text-yellow-600 font-semibold"> PRO</span>
+              {ROLE_LABELS[user?.role] || 'Professional'}
             </p>
           </div>
           <Avatar className="w-10 h-10 cursor-pointer" onClick={() => navigate('/profile')}>
@@ -68,15 +87,27 @@ const TopBar = () => {
           </Avatar>
         </div>
 
-        <Button
-          onClick={handleLogout}
-          variant="ghost"
-          size="sm"
-          className="text-slate-600 hover:text-red-600"
-          data-testid="logout-button"
-        >
-          <FiLogOut className="w-5 h-5" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-slate-600 hover:text-red-600"
+              data-testid="logout-button"
+            >
+              <FiLogOut className="w-5 h-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleLogout} data-testid="logout-this-device">
+              Log out
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogoutAll} className="text-red-600" data-testid="logout-all-devices">
+              Log out from all devices
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

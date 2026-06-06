@@ -12,9 +12,16 @@ const fs = require('fs');
 router.post('/create', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
-    
-    if (user.role !== 'recruiter') {
-      return res.status(403).json({ error: 'Only recruiters can post jobs' });
+
+    // Firms, anyone whose intent is to hire, and legacy recruiters can post jobs
+    const canPost =
+      user.role === 'firm' ||
+      user.role === 'recruiter' ||
+      user.role === 'company' ||
+      (Array.isArray(user.intent) && user.intent.includes('hire'));
+
+    if (!canPost) {
+      return res.status(403).json({ error: 'Only firms or members hiring can post jobs' });
     }
 
     const { title, description, company, location, salary } = req.body;

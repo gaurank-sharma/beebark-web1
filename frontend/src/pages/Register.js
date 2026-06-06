@@ -1,39 +1,68 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
-import { FaFacebook, FaGithub, FaGoogle, FaEnvelope, FaUser, FaLock } from 'react-icons/fa';
+import { FaEnvelope, FaUser, FaLock, FaEye, FaEyeSlash, FaCheck } from 'react-icons/fa';
+import AuthShell from '../components/auth/AuthShell';
+import SocialAuth from '../components/auth/SocialAuth';
+import OtpVerification from '../components/auth/OtpVerification';
+
+// Password policy (matches backend): 8+ chars, upper, lower, number, special
+const PASSWORD_RULES = [
+  { key: 'length', label: 'At least 8 characters', test: (p) => p.length >= 8 },
+  { key: 'upper', label: 'One uppercase letter', test: (p) => /[A-Z]/.test(p) },
+  { key: 'lower', label: 'One lowercase letter', test: (p) => /[a-z]/.test(p) },
+  { key: 'number', label: 'One number', test: (p) => /[0-9]/.test(p) },
+  { key: 'special', label: 'One special character', test: (p) => /[^A-Za-z0-9]/.test(p) }
+];
+
+const evaluatePassword = (pw) => {
+  const passed = PASSWORD_RULES.map((r) => ({ ...r, ok: r.test(pw) }));
+  const score = passed.filter((r) => r.ok).length; // 0-5
+  const meta = [
+    { label: 'Too weak', color: 'bg-red-500' },
+    { label: 'Weak', color: 'bg-orange-500' },
+    { label: 'Fair', color: 'bg-yellow-500' },
+    { label: 'Okay', color: 'bg-lime-500' },
+    { label: 'Good', color: 'bg-green-500' },
+    { label: 'Strong', color: 'bg-green-600' }
+  ];
+  return { score, rules: passed, allValid: score === PASSWORD_RULES.length, ...meta[score] };
+};
 
 const Register = () => {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    role: 'user'
-  });
-  const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
   const navigate = useNavigate();
+  const { registerInit, googleLogin } = useAuth();
 
-  const handleSubmit = async (e) => {
+  const [step, setStep] = useState(0); // 0=details, 1=otp
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const strength = useMemo(() => evaluatePassword(form.password), [form.password]);
+  const update = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+
+  const handleGoogle = async (credential) => {
+    try {
+      const data = await googleLogin(credential);
+      toast.success(data.isNewUser ? 'Welcome to BeeBark!' : 'Welcome back!');
+      navigate(data?.user?.onboardingCompleted === false ? '/onboarding' : '/dashboard');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Google sign-in failed');
+    }
+  };
+
+  const submitDetails = async (e) => {
     e.preventDefault();
-    
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return;
-    }
+    if (!form.name.trim()) return toast.error('Please enter your name');
+    if (!strength.allValid) return toast.error('Please meet all password requirements');
+    if (form.password !== form.confirmPassword) return toast.error('Passwords do not match');
 
     setLoading(true);
     try {
-      await register(formData.name, formData.email, formData.password, formData.role);
-      toast.success('Account created successfully!');
-      navigate('/dashboard');
+      await registerInit(form.name.trim(), form.email.trim(), form.password);
+      toast.success('Verification code sent to your email');
+      setStep(1);
     } catch (error) {
       toast.error(error.response?.data?.error || 'Registration failed');
     } finally {
@@ -42,130 +71,91 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen flex" data-testid="register-page">
-      {/* Left Side - Illustration */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-cyan-400 to-blue-500 items-center justify-center p-12">
-        <div className="text-center">
-          <div className="mb-8">
-            <svg viewBox="0 0 400 400" className="w-96 h-96">
-              <rect x="50" y="50" width="300" height="300" fill="#60A5FA" opacity="0.2" rx="20"/>
-              <circle cx="200" cy="150" r="40" fill="#FCD34D"/>
-              <rect x="160" y="190" width="80" height="120" fill="#1E40AF" rx="10"/>
-              <text x="200" y="340" textAnchor="middle" fontSize="24" fill="white" fontWeight="bold">
-                Join BeeBark
-              </text>
-            </svg>
-          </div>
-        </div>
-      </div>
+    <AuthShell>
+      {/* Step 0 — Account details */}
+      {step === 0 && (
+        <div data-testid="details-step">
+          <h2 className="text-2xl sm:text-3xl font-bold text-black">Create your account</h2>
+          <p className="mt-2 text-gray-600 text-sm">
+            Already have an account?{' '}
+            <Link to="/login" className="font-semibold text-black hover:underline">Log in</Link>
+          </p>
 
-      {/* Right Side - Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
-        <div className="w-full max-w-md">
-          <div className="mb-10">
-            <h1 className="text-4xl font-bold text-black mb-2">BeeBark</h1>
-            <h2 className="text-3xl font-semibold text-black mb-4">Sign up</h2>
-            <p className="text-gray-600">
-              If you already have an account register<br />
-              You can{' '}
-              <Link to="/login" className="text-red-500 font-semibold hover:underline">
-                Login here !
-              </Link>
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-6" data-testid="register-form">
+          <form onSubmit={submitDetails} className="mt-7 space-y-5" data-testid="register-form">
             <div>
-              <label className="block text-sm font-medium text-black mb-2">Email</label>
-              <div className="relative">
-                <FaEnvelope className="absolute left-0 top-4 text-gray-400" />
-                <input
-                  type="email"
-                  placeholder="Enter your email address"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                  className="input-beebark pl-7"
-                  data-testid="email-input"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-black mb-2">Username</label>
+              <label className="block text-sm font-medium text-black mb-1">Full name</label>
               <div className="relative">
                 <FaUser className="absolute left-0 top-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Enter your User name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                  className="input-beebark pl-7"
-                  data-testid="name-input"
-                />
+                <input type="text" placeholder="Enter your name" value={form.name} onChange={update('name')} required className="input-beebark pl-7" data-testid="name-input" />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-black mb-2">Password</label>
+              <label className="block text-sm font-medium text-black mb-1">Email</label>
               <div className="relative">
-                <FaLock className="absolute left-0 top-4 text-gray-400" />
-                <input
-                  type="password"
-                  placeholder="Enter your Password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                  className="input-beebark pl-7"
-                  data-testid="password-input"
-                />
+                <FaEnvelope className="absolute left-0 top-4 text-gray-400" />
+                <input type="email" placeholder="you@example.com" value={form.email} onChange={update('email')} required className="input-beebark pl-7" data-testid="email-input" />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-black mb-2">Confirm Password</label>
+              <label className="block text-sm font-medium text-black mb-1">Password</label>
               <div className="relative">
                 <FaLock className="absolute left-0 top-4 text-gray-400" />
-                <input
-                  type="password"
-                  placeholder="Confirm your Password"
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  required
-                  className="input-beebark pl-7"
-                  data-testid="confirm-password-input"
-                />
+                <input type={showPassword ? 'text' : 'password'} placeholder="Create a password" value={form.password} onChange={update('password')} required className="input-beebark pl-7 pr-8" data-testid="password-input" />
+                <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-0 top-4 text-gray-400 hover:text-black" tabIndex={-1} aria-label="Toggle password visibility">
+                  {showPassword ? <FaEyeSlash /> : <FaEye />}
+                </button>
               </div>
+              {form.password && (
+                <div className="mt-2">
+                  <div className="flex gap-1">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <span key={i} className={`h-1 flex-1 rounded-full ${i < strength.score ? strength.color : 'bg-gray-200'}`} />
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs font-medium text-gray-600">{strength.label}</p>
+                  <ul className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">
+                    {strength.rules.map((r) => (
+                      <li key={r.key} className={`flex items-center gap-1.5 text-xs ${r.ok ? 'text-green-600' : 'text-gray-400'}`}>
+                        <FaCheck className={`text-[9px] ${r.ok ? 'opacity-100' : 'opacity-30'}`} />
+                        {r.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="auth-yellow-btn"
-              data-testid="register-submit-button"
-            >
-              {loading ? 'Creating Account...' : 'Register'}
+            <div>
+              <label className="block text-sm font-medium text-black mb-1">Confirm password</label>
+              <div className="relative">
+                <FaLock className="absolute left-0 top-4 text-gray-400" />
+                <input type={showPassword ? 'text' : 'password'} placeholder="Re-enter your password" value={form.confirmPassword} onChange={update('confirmPassword')} required className="input-beebark pl-7" data-testid="confirm-password-input" />
+              </div>
+              {form.confirmPassword && form.confirmPassword !== form.password && (
+                <p className="mt-1 text-xs text-red-500">Passwords don't match</p>
+              )}
+            </div>
+
+            <button type="submit" disabled={loading} className="auth-yellow-btn disabled:opacity-50 disabled:cursor-not-allowed" data-testid="register-submit-button">
+              {loading ? 'Sending code...' : 'Create account'}
             </button>
           </form>
 
-          <div className="mt-8">
-            <p className="text-center text-gray-500 mb-4">or continue with</p>
-            <div className="flex justify-center space-x-4">
-              <button className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center hover:bg-blue-700 transition">
-                <FaFacebook className="text-white text-xl" />
-              </button>
-              <button className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center hover:bg-gray-900 transition">
-                <FaGithub className="text-white text-xl" />
-              </button>
-              <button className="w-12 h-12 rounded-full bg-white border-2 border-gray-300 flex items-center justify-center hover:bg-gray-50 transition">
-                <FaGoogle className="text-red-500 text-xl" />
-              </button>
-            </div>
-          </div>
+          <SocialAuth onGoogleCredential={handleGoogle} text="signup_with" />
         </div>
-      </div>
-    </div>
+      )}
+
+      {/* Step 1 — OTP verification */}
+      {step === 1 && (
+        <OtpVerification
+          email={form.email.trim()}
+          onVerified={() => navigate('/onboarding')}
+          onBack={() => setStep(0)}
+        />
+      )}
+    </AuthShell>
   );
 };
 

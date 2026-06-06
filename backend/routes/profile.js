@@ -16,6 +16,11 @@ router.get('/me', auth, async (req, res) => {
       username: user.username,
       email: user.email,
       role: user.role,
+      intent: user.intent || [],
+      industries: user.industries || [],
+      location: user.location || '',
+      onboardingCompleted: user.onboardingCompleted,
+      isVerified: user.isVerified,
       profilePic: user.profilePic,
       bio: user.bio,
       skills: user.skills,
@@ -67,6 +72,42 @@ router.put('/update', auth, async (req, res) => {
     res.json({ message: 'Profile updated successfully', user });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update profile', message: error.message });
+  }
+});
+
+// Onboarding: save intent / industries / basic profile and mark complete.
+// Partial saves are allowed (per-step), completion is set on the final step.
+router.put('/onboarding', auth, async (req, res) => {
+  try {
+    const { role, intent, industries, bio, location, skills, profilePic, complete } = req.body;
+
+    const VALID_ROLES = ['student', 'professional', 'firm'];
+    const VALID_INTENT = ['learn', 'network', 'hire', 'get_hired'];
+    const VALID_INDUSTRY = ['architecture', 'interiors', 'construction', 'real_estate', 'related'];
+
+    const update = {};
+    if (VALID_ROLES.includes(role)) update.role = role;
+    if (Array.isArray(intent)) {
+      update.intent = intent.filter((i) => VALID_INTENT.includes(i));
+    }
+    if (Array.isArray(industries)) {
+      update.industries = industries.filter((i) => VALID_INDUSTRY.includes(i));
+    }
+    if (bio !== undefined) update.bio = String(bio).slice(0, 500);
+    if (location !== undefined) update.location = String(location).slice(0, 120);
+    if (Array.isArray(skills)) update.skills = skills.map((s) => String(s).trim()).filter(Boolean).slice(0, 30);
+    if (profilePic !== undefined) update.profilePic = profilePic;
+    if (complete === true) update.onboardingCompleted = true;
+
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      update,
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    res.json({ message: 'Onboarding saved', user });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to save onboarding', message: error.message });
   }
 });
 

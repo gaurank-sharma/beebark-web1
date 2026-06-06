@@ -5,6 +5,8 @@ import { SocketProvider } from './context/SocketContext';
 import { Toaster } from './components/ui/sonner';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import VerifyEmail from './pages/VerifyEmail';
+import Onboarding from './pages/Onboarding';
 import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import Feed from './pages/Feed';
@@ -30,7 +32,29 @@ const PrivateRoute = ({ children }) => {
     );
   }
   
-  return user ? children : <Navigate to="/login" />;
+  if (!user) return <Navigate to="/login" />;
+  // Force first-time users through onboarding before the rest of the app
+  if (user.onboardingCompleted === false) return <Navigate to="/onboarding" />;
+  return children;
+};
+
+const OnboardingRoute = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" />;
+  if (user.onboardingCompleted) return <Navigate to="/dashboard" />;
+  return <Onboarding />;
 };
 
 const PublicRoute = ({ children }) => {
@@ -60,6 +84,8 @@ function App() {
             <Route path="/" element={<Navigate to="/dashboard" />} />
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+            <Route path="/verify-email" element={<PublicRoute><VerifyEmail /></PublicRoute>} />
+            <Route path="/onboarding" element={<OnboardingRoute />} />
             <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
             <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/feed" element={<PrivateRoute><Feed /></PrivateRoute>} />

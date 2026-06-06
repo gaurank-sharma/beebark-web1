@@ -4,6 +4,25 @@ import { API_URL } from '../config/api';
 
 const AuthContext = createContext();
 
+// Fail requests that hang (e.g. slow/dropped network) instead of spinning forever
+axios.defaults.timeout = 20000;
+
+// Token is kept in localStorage when "Remember me" is on (persists across
+// browser restarts) and in sessionStorage otherwise (cleared when tab closes).
+const readStoredToken = () =>
+  localStorage.getItem('token') || sessionStorage.getItem('token');
+
+const storeToken = (token, remember) => {
+  localStorage.removeItem('token');
+  sessionStorage.removeItem('token');
+  (remember ? localStorage : sessionStorage).setItem('token', token);
+};
+
+const clearStoredToken = () => {
+  localStorage.removeItem('token');
+  sessionStorage.removeItem('token');
+};
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -14,7 +33,7 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(readStoredToken());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,31 +57,67 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email, password) => {
+  // Finalize an authenticated session from a token + user payload
+  const establishSession = (data, remember = true) => {
+    const { token: newToken, user: sessionUser } = data;
+    storeToken(newToken, remember);
+    setToken(newToken);
+    setUser(sessionUser);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    return data;
+  };
+
+  const login = async (email, password, remember = true) => {
     const response = await axios.post(`${API_URL}/api/auth/login`, { email, password });
-    const { token, user } = response.data;
-    localStorage.setItem('token', token);
-    setToken(token);
-    setUser(user);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    return establishSession(response.data, remember);
+  };
+
+  // Step 1 of registration: creates an unverified account and emails an OTP.
+  // Returns { requiresVerification, email } — no token yet.
+  const registerInit = async (name, email, password, role) => {
+    const response = await axios.post(`${API_URL}/api/auth/register`, { name, email, password, role });
     return response.data;
   };
 
-  const register = async (name, email, password, role) => {
-    const response = await axios.post(`${API_URL}/api/auth/register`, { name, email, password, role });
-    const { token, user } = response.data;
-    localStorage.setItem('token', token);
-    setToken(token);
-    setUser(user);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  // Step 2: verify the emailed OTP. On success, establishes the session.
+  const verifyOtp = async (email, otp) => {
+    const response = await axios.post(`${API_URL}/api/auth/verify-otp`, { email, otp });
+    return establishSession(response.data, true);
+  };
+
+  const resendOtp = async (email) => {
+    const response = await axios.post(`${API_URL}/api/auth/resend-otp`, { email });
+    return response.data;
+  };
+
+  // Sign in / sign up with a Google ID token (credential) from Google Identity Services
+  const googleLogin = async (credential, role) => {
+    const response = await axios.post(`${API_URL}/api/auth/google`, { credential, role });
+    return establishSession(response.data, true);
+  };
+
+  // Save onboarding data; refreshes the user so onboardingCompleted is current
+  const updateOnboarding = async (payload) => {
+    const response = await axios.put(`${API_URL}/api/profile/onboarding`, payload);
+    await fetchCurrentUser();
     return response.data;
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    clearStoredToken();
     setToken(null);
     setUser(null);
     delete axios.defaults.headers.common['Authorization'];
+  };
+
+  const logoutAll = async () => {
+    try {
+      await axios.post(`${API_URL}/api/auth/logout-all`);
+    } catch (error) {
+      console.error('Logout-all failed:', error);
+    } finally {
+      logout();
+    }
   };
 
   const value = {
@@ -70,8 +125,13 @@ export const AuthProvider = ({ children }) => {
     token,
     loading,
     login,
-    register,
+    registerInit,
+    verifyOtp,
+    resendOtp,
+    googleLogin,
+    updateOnboarding,
     logout,
+    logoutAll,
     setUser
   };
 

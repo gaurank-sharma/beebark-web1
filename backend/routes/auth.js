@@ -2,180 +2,462 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const User = require('../models/User');
-const { sendPasswordResetEmail } = require('../utils/email');
+const axios = require('axios');
 const { body, validationResult } = require('express-validator');
 
-router.post('/register', [
-  body('name').notEmpty().trim(),
-  body('email').isEmail().normalizeEmail(),
-  body('password').isLength({ min: 6 })
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+const User = require('../models/User');
+const auth = require('../middleware/auth');
+const rateLimit = require('../middleware/rateLimit');
+const {
+  OTP_TTL_MS,
+  OTP_MAX_ATTEMPTS,
+  OTP_RESEND_COOLDOWN_MS,
+  generateOtp,
+  hashOtp,
+  verifyOtp
+} = require('../utils/otp');
+const {
+  sendOtpEmail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail
+} = require('../utils/email');
 
-    const { name, email, password, role } = req.body;
+// Roles a user may self-select at signup (others are reserved/legacy)
+const SELECTABLE_ROLES = ['student', 'professional', 'firm'];
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
-    }
+const signToken = (user) =>
+  jwt.sign(
+    { userId: user._id, tokenVersion: user.tokenVersion || 0 },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
 
-    // Auto-generate username from email
-    let baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-    let username = baseUsername;
-    let counter = 1;
-    
-    // Check if username exists and add number if needed
-    while (await User.findOne({ username })) {
-      username = `${baseUsername}${counter}`;
-      counter++;
-    }
+const publicUser = (user) => ({
+  id: user._id,
+  name: user.name,
+  username: user.username,
+  email: user.email,
+  role: user.role,
+  intent: user.intent || [],
+  industries: user.industries || [],
+  location: user.location || '',
+  bio: user.bio || '',
+  skills: user.skills || [],
+  isVerified: user.isVerified,
+  onboardingCompleted: user.onboardingCompleted,
+  profilePic: user.profilePic
+});
 
-    const user = new User({
-      name,
-      username,
-      email,
-      password,
-      role: role || 'user'
-    });
+// Strong password (PDF Day 3): min 8 chars, upper + lower + number + special
+const strongPassword = (value) =>
+  typeof value === 'string' &&
+  value.length >= 8 &&
+  /[a-z]/.test(value) &&
+  /[A-Z]/.test(value) &&
+  /[0-9]/.test(value) &&
+  /[^A-Za-z0-9]/.test(value);
 
-    await user.save();
+const PASSWORD_MESSAGE =
+  'Password must be 8+ characters and include uppercase, lowercase, a number, and a special character';
 
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+const handleValidation = (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({ errors: errors.array(), error: errors.array()[0].msg });
+    return false;
+  }
+  return true;
+};
 
-    res.status(201).json({
-      message: 'User registered successfully',
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        profilePic: user.profilePic
+const generateUniqueUsername = async (email) => {
+  const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+  let username = base;
+  let counter = 1;
+  while (await User.findOne({ username })) {
+    username = `${base}${counter}`;
+    counter += 1;
+  }
+  return username;
+};
+
+// Rate limiters (per IP)
+const registerLimiter = rateLimit({ bucket: 'register', windowMs: 15 * 60 * 1000, max: 10, message: 'Too many sign-up attempts. Please try again later.' });
+const loginLimiter = rateLimit({ bucket: 'login', windowMs: 15 * 60 * 1000, max: 15, message: 'Too many login attempts. Please try again later.' });
+const otpLimiter = rateLimit({ bucket: 'otp', windowMs: 15 * 60 * 1000, max: 20, message: 'Too many verification attempts. Please try again later.' });
+
+/**
+ * STEP 1 — Register: create an unverified account and email an OTP.
+ * Does NOT return an auth token; the user must verify first.
+ */
+router.post(
+  '/register',
+  registerLimiter,
+  [
+    body('name').trim().notEmpty().withMessage('Name is required'),
+    body('email').isEmail().withMessage('A valid email is required').normalizeEmail(),
+    body('password').custom(strongPassword).withMessage(PASSWORD_MESSAGE),
+    body('role').optional().isIn(SELECTABLE_ROLES).withMessage('Please choose a valid account type')
+  ],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+      const { name, email, password } = req.body;
+      const role = SELECTABLE_ROLES.includes(req.body.role) ? req.body.role : 'professional';
+
+      const existing = await User.findOne({ email });
+      if (existing && existing.isVerified) {
+        return res.status(400).json({ error: 'Email already registered. Please log in.' });
       }
-    });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed', message: error.message });
-  }
-});
 
-router.post('/login', [
-  body('email').isEmail().normalizeEmail(),
-  body('password').notEmpty()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+      const otp = generateOtp();
+      const verification = {
+        otpHash: hashOtp(otp),
+        expiresAt: new Date(Date.now() + OTP_TTL_MS),
+        attempts: 0,
+        lastSentAt: new Date()
+      };
 
-    const { email, password } = req.body;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.json({
-      message: 'Login successful',
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        profilePic: user.profilePic
+      let user;
+      if (existing && !existing.isVerified) {
+        // Re-registration of an unverified account: refresh details + OTP
+        existing.name = name;
+        existing.password = password; // re-hashed by pre-save hook
+        existing.role = role;
+        existing.authProvider = 'local';
+        existing.emailVerification = verification;
+        user = await existing.save();
+      } else {
+        user = new User({
+          name,
+          username: await generateUniqueUsername(email),
+          email,
+          password,
+          role,
+          authProvider: 'local',
+          isVerified: false,
+          emailVerification: verification
+        });
+        await user.save();
       }
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed', message: error.message });
+
+      try {
+        await sendOtpEmail(user.email, user.name, otp);
+      } catch (mailErr) {
+        console.error('Failed to send OTP email:', mailErr.message);
+        return res.status(502).json({ error: 'Could not send verification email. Please try again.' });
+      }
+
+      res.status(201).json({
+        message: 'Verification code sent to your email',
+        requiresVerification: true,
+        email: user.email
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      res.status(500).json({ error: 'Registration failed' });
+    }
   }
-});
+);
 
-router.post('/forgot-password', [
-  body('email').isEmail().normalizeEmail()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+/**
+ * STEP 2 — Verify OTP: confirm the code, mark verified, send welcome email,
+ * and return an auth token.
+ */
+router.post(
+  '/verify-otp',
+  otpLimiter,
+  [
+    body('email').isEmail().withMessage('A valid email is required').normalizeEmail(),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('Enter the 6-digit code').isNumeric().withMessage('Code must be numeric')
+  ],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+      const { email, otp } = req.body;
+
+      const user = await User.findOne({ email });
+      if (!user) return res.status(404).json({ error: 'Account not found' });
+      if (user.isVerified) return res.status(400).json({ error: 'Email is already verified. Please log in.' });
+
+      const ev = user.emailVerification || {};
+      if (!ev.otpHash || !ev.expiresAt) {
+        return res.status(400).json({ error: 'No active code. Please request a new one.' });
+      }
+      if (Date.now() > new Date(ev.expiresAt).getTime()) {
+        return res.status(400).json({ error: 'Verification code expired. Please request a new one.' });
+      }
+      if (ev.attempts >= OTP_MAX_ATTEMPTS) {
+        return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new code.' });
+      }
+
+      if (!verifyOtp(otp, ev.otpHash)) {
+        user.emailVerification.attempts = (ev.attempts || 0) + 1;
+        await user.save();
+        const left = Math.max(0, OTP_MAX_ATTEMPTS - user.emailVerification.attempts);
+        return res.status(400).json({ error: `Incorrect code. ${left} attempt${left === 1 ? '' : 's'} remaining.` });
+      }
+
+      user.isVerified = true;
+      user.emailVerification = undefined;
+      await user.save();
+
+      // Welcome email is best-effort; don't block verification on it
+      sendWelcomeEmail(user.email, user.name).catch((e) =>
+        console.error('Failed to send welcome email:', e.message)
+      );
+
+      res.json({
+        message: 'Email verified successfully',
+        token: signToken(user),
+        user: publicUser(user)
+      });
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      res.status(500).json({ error: 'Verification failed' });
     }
-
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    user.resetPasswordExpires = Date.now() + 3600000;
-    await user.save();
-
-    const resetUrl = `${process.env.APP_URL}/reset-password/${resetToken}`;
-    
-    await sendPasswordResetEmail(user.email, resetUrl);
-
-    res.json({ message: 'Password reset email sent' });
-  } catch (error) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({ error: 'Failed to send reset email', message: error.message });
   }
-});
+);
 
-router.post('/reset-password/:token', [
-  body('password').isLength({ min: 6 })
-], async (req, res) => {
+/**
+ * Resend OTP (with cooldown).
+ */
+router.post(
+  '/resend-otp',
+  otpLimiter,
+  [body('email').isEmail().withMessage('A valid email is required').normalizeEmail()],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+      const user = await User.findOne({ email: req.body.email });
+
+      // Don't reveal whether the account exists / is already verified
+      if (!user || user.isVerified) {
+        return res.json({ message: 'If your email needs verification, a new code has been sent.' });
+      }
+
+      const lastSent = user.emailVerification?.lastSentAt;
+      if (lastSent && Date.now() - new Date(lastSent).getTime() < OTP_RESEND_COOLDOWN_MS) {
+        const wait = Math.ceil((OTP_RESEND_COOLDOWN_MS - (Date.now() - new Date(lastSent).getTime())) / 1000);
+        return res.status(429).json({ error: `Please wait ${wait}s before requesting another code.`, retryAfter: wait });
+      }
+
+      const otp = generateOtp();
+      user.emailVerification = {
+        otpHash: hashOtp(otp),
+        expiresAt: new Date(Date.now() + OTP_TTL_MS),
+        attempts: 0,
+        lastSentAt: new Date()
+      };
+      await user.save();
+
+      try {
+        await sendOtpEmail(user.email, user.name, otp);
+      } catch (mailErr) {
+        console.error('Failed to resend OTP email:', mailErr.message);
+        return res.status(502).json({ error: 'Could not send verification email. Please try again.' });
+      }
+
+      res.json({ message: 'A new verification code has been sent.' });
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      res.status(500).json({ error: 'Could not resend code' });
+    }
+  }
+);
+
+/**
+ * Login — blocked until the email is verified.
+ */
+router.post(
+  '/login',
+  loginLimiter,
+  [
+    body('email').isEmail().withMessage('A valid email is required').normalizeEmail(),
+    body('password').notEmpty().withMessage('Password is required')
+  ],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+      const { email, password } = req.body;
+
+      const user = await User.findOne({ email });
+      if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+      if (user.authProvider === 'google' && !user.password) {
+        return res.status(400).json({ error: 'This account uses Google sign-in. Please continue with Google.' });
+      }
+
+      const isMatch = await user.comparePassword(password);
+      if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
+
+      if (!user.isVerified) {
+        return res.status(403).json({
+          error: 'Please verify your email to continue.',
+          requiresVerification: true,
+          email: user.email
+        });
+      }
+
+      res.json({
+        message: 'Login successful',
+        token: signToken(user),
+        user: publicUser(user)
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ error: 'Login failed' });
+    }
+  }
+);
+
+/**
+ * Google sign-in / sign-up. Expects a Google ID token ("credential")
+ * obtained client-side via Google Identity Services.
+ */
+router.post(
+  '/google',
+  loginLimiter,
+  [body('credential').notEmpty().withMessage('Missing Google credential')],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      if (!clientId) {
+        return res.status(503).json({ error: 'Google sign-in is not configured on the server.' });
+      }
+
+      // Verify the ID token with Google (validates signature & expiry server-side)
+      let payload;
+      try {
+        const { data } = await axios.get('https://oauth2.googleapis.com/tokeninfo', {
+          params: { id_token: req.body.credential }
+        });
+        payload = data;
+      } catch (e) {
+        return res.status(401).json({ error: 'Invalid Google credential' });
+      }
+
+      if (payload.aud !== clientId) {
+        return res.status(401).json({ error: 'Google credential was not issued for this app' });
+      }
+      if (payload.email_verified !== 'true' && payload.email_verified !== true) {
+        return res.status(401).json({ error: 'Your Google email is not verified' });
+      }
+
+      const email = String(payload.email).toLowerCase();
+      let user = await User.findOne({ $or: [{ googleId: payload.sub }, { email }] });
+      let isNewUser = false;
+
+      if (user) {
+        // Link Google to an existing account if needed
+        let changed = false;
+        if (!user.googleId) { user.googleId = payload.sub; changed = true; }
+        if (!user.isVerified) { user.isVerified = true; changed = true; }
+        if (user.authProvider !== 'google' && !user.password) { user.authProvider = 'google'; changed = true; }
+        if (changed) await user.save();
+      } else {
+        isNewUser = true;
+        user = new User({
+          name: payload.name || email.split('@')[0],
+          username: await generateUniqueUsername(email),
+          email,
+          googleId: payload.sub,
+          authProvider: 'google',
+          isVerified: true,
+          role: SELECTABLE_ROLES.includes(req.body.role) ? req.body.role : 'professional',
+          profilePic: payload.picture || ''
+        });
+        await user.save();
+        sendWelcomeEmail(user.email, user.name).catch((e) =>
+          console.error('Failed to send welcome email:', e.message)
+        );
+      }
+
+      res.json({
+        message: 'Google sign-in successful',
+        token: signToken(user),
+        user: publicUser(user),
+        isNewUser
+      });
+    } catch (error) {
+      console.error('Google auth error:', error);
+      res.status(500).json({ error: 'Google sign-in failed' });
+    }
+  }
+);
+
+router.post(
+  '/forgot-password',
+  loginLimiter,
+  [body('email').isEmail().withMessage('A valid email is required').normalizeEmail()],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+      const user = await User.findOne({ email: req.body.email });
+
+      // Always respond the same way to avoid leaking which emails exist
+      if (user && user.password) {
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+        user.resetPasswordExpires = Date.now() + 3600000;
+        await user.save();
+        const resetUrl = `${process.env.APP_URL}/reset-password/${resetToken}`;
+        try {
+          await sendPasswordResetEmail(user.email, resetUrl);
+        } catch (mailErr) {
+          console.error('Failed to send reset email:', mailErr.message);
+        }
+      }
+
+      res.json({ message: 'If an account exists for that email, a reset link has been sent.' });
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      res.status(500).json({ error: 'Failed to process request' });
+    }
+  }
+);
+
+router.post(
+  '/reset-password/:token',
+  [body('password').custom(strongPassword).withMessage(PASSWORD_MESSAGE)],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+
+      const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+      const user = await User.findOne({
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { $gt: Date.now() }
+      });
+
+      if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
+
+      user.password = req.body.password;
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpires = undefined;
+      await user.save();
+
+      res.json({ message: 'Password reset successful' });
+    } catch (error) {
+      console.error('Reset password error:', error);
+      res.status(500).json({ error: 'Password reset failed' });
+    }
+  }
+);
+
+/**
+ * Log out from all devices — invalidates every previously issued token by
+ * bumping the user's tokenVersion.
+ */
+router.post('/logout-all', auth, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
-
-    const user = await User.findOne({
-      resetPasswordToken: hashedToken,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
-
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid or expired reset token' });
-    }
-
-    user.password = req.body.password;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
-
-    res.json({ message: 'Password reset successful' });
+    req.user.tokenVersion = (req.user.tokenVersion || 0) + 1;
+    await req.user.save();
+    res.json({ message: 'Logged out from all devices' });
   } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Password reset failed', message: error.message });
+    console.error('Logout-all error:', error);
+    res.status(500).json({ error: 'Failed to log out from all devices' });
   }
 });
 

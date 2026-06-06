@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { toast } from 'sonner';
+import { FaEnvelope } from 'react-icons/fa';
+import AuthShell from '../components/auth/AuthShell';
+import { API_URL } from '../config/api';
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -16,9 +15,9 @@ const ForgotPassword = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/auth/forgot-password`, { email });
+      await axios.post(`${API_URL}/api/auth/forgot-password`, { email: email.trim() });
       setSent(true);
-      toast.success('Password reset email sent!');
+      toast.success('If an account exists, a reset link has been sent.');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to send reset email');
     } finally {
@@ -27,54 +26,56 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-slate-50 p-4" data-testid="forgot-password-page">
-      <Card className="w-full max-w-md shadow-xl border-slate-200">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold text-slate-900">Forgot Password</CardTitle>
-          <CardDescription>
-            {sent ? 'Check your email for reset instructions' : 'Enter your email to reset your password'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!sent ? (
-            <form onSubmit={handleSubmit} className="space-y-4" data-testid="forgot-password-form">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
+    <AuthShell
+      headline="Reset your password"
+      subline="We'll email you a secure link to set a new password."
+    >
+      <div data-testid="forgot-password-page">
+        <h2 className="text-2xl sm:text-3xl font-bold text-black">Forgot password</h2>
+        <p className="mt-2 text-gray-600 text-sm">
+          {sent ? 'Check your inbox for reset instructions.' : 'Enter your email and we’ll send you a reset link.'}
+        </p>
+
+        {!sent ? (
+          <form onSubmit={handleSubmit} className="mt-7 space-y-5" data-testid="forgot-password-form">
+            <div>
+              <label className="block text-sm font-medium text-black mb-1">Email</label>
+              <div className="relative">
+                <FaEnvelope className="absolute left-0 top-4 text-gray-400" />
+                <input
                   type="email"
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  className="input-beebark pl-7"
                   data-testid="email-input"
-                  className="border-slate-300 focus:border-blue-500"
                 />
               </div>
-              <Button
-                type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700"
-                disabled={loading}
-                data-testid="submit-button"
-              >
-                {loading ? 'Sending...' : 'Send Reset Link'}
-              </Button>
-            </form>
-          ) : (
-            <div className="text-center py-4">
-              <p className="text-slate-600 mb-4">
-                We've sent a password reset link to <strong>{email}</strong>
-              </p>
             </div>
-          )}
-          <div className="mt-6 text-center">
-            <Link to="/login" className="text-sm text-blue-600 hover:text-blue-700" data-testid="back-to-login-link">
-              Back to sign in
-            </Link>
+            <button
+              type="submit"
+              disabled={loading}
+              className="auth-yellow-btn disabled:opacity-50 disabled:cursor-not-allowed"
+              data-testid="submit-button"
+            >
+              {loading ? 'Sending...' : 'Send reset link'}
+            </button>
+          </form>
+        ) : (
+          <div className="mt-7 rounded-2xl border-2 border-yellow-200 bg-yellow-50 p-5 text-sm text-gray-700">
+            We've sent a password reset link to <strong className="text-black break-all">{email}</strong> if an
+            account exists for it. The link expires in 1 hour.
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+
+        <p className="mt-6 text-center text-sm text-gray-600">
+          <Link to="/login" className="font-semibold text-black hover:underline" data-testid="back-to-login-link">
+            Back to sign in
+          </Link>
+        </p>
+      </div>
+    </AuthShell>
   );
 };
 

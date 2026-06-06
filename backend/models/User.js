@@ -23,7 +23,20 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
+    // Password is only required for local (email/password) accounts
+    required: function () {
+      return this.authProvider === 'local';
+    }
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true
   },
   profilePic: {
     type: String,
@@ -31,7 +44,13 @@ const userSchema = new mongoose.Schema({
   },
   bio: {
     type: String,
-    default: ''
+    default: '',
+    maxlength: 500
+  },
+  location: {
+    type: String,
+    default: '',
+    trim: true
   },
   skills: [{
     type: String
@@ -56,8 +75,38 @@ const userSchema = new mongoose.Schema({
   }],
   role: {
     type: String,
-    enum: ['user', 'recruiter'],
-    default: 'user'
+    // Self-selectable: student/professional/firm. Others kept for backward compatibility.
+    enum: ['student', 'professional', 'firm', 'recruiter', 'company', 'user', 'admin'],
+    default: 'professional'
+  },
+  // What the user wants to do on the platform (onboarding step 2)
+  intent: [{
+    type: String,
+    enum: ['learn', 'network', 'hire', 'get_hired']
+  }],
+  // Industry focus (onboarding step 3)
+  industries: [{
+    type: String,
+    enum: ['architecture', 'interiors', 'construction', 'real_estate', 'related']
+  }],
+  onboardingCompleted: {
+    type: Boolean,
+    default: false
+  },
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+  // Bumped to invalidate all previously issued tokens ("log out everywhere")
+  tokenVersion: {
+    type: Number,
+    default: 0
+  },
+  emailVerification: {
+    otpHash: String,
+    expiresAt: Date,
+    attempts: { type: Number, default: 0 },
+    lastSentAt: Date
   },
   resume: {
     url: String,

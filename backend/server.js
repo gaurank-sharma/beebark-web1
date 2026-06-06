@@ -7,24 +7,44 @@ const { Server } = require('socket.io');
 
 dotenv.config();
 
+// Only emit verbose, per-request/per-socket logs outside production
+const debug = process.env.NODE_ENV === 'production' ? () => {} : console.log;
+
+// Parse allowed CORS origins from a comma-separated env var. "*" allows all (dev default).
+const corsOrigins = process.env.CORS_ORIGINS || '*';
+const allowedOrigins = corsOrigins === '*'
+  ? '*'
+  : corsOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+
+const corsOptions = {
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true
+};
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGINS || '*',
-    methods: ['GET', 'POST']
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const { sanitizeRequest, securityHeaders } = require('./middleware/security');
+
+app.use(securityHeaders);
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(sanitizeRequest);
 
 const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017';
 const dbName = process.env.DB_NAME || 'social_network_db';
 
 mongoose.connect(`${mongoUrl}/${dbName}`)
-.then(() => console.log('MongoDB connected successfully'))
+.then(() => debug('MongoDB connected successfully'))
 .catch(err => console.error('MongoDB connection error:', err));
 
 app.get('/', (req, res) => {
@@ -70,23 +90,23 @@ app.set('connectedUsers', connectedUsers);
 app.set('meetingRooms', meetingRooms);
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  debug('User connected:', socket.id);
   
   socket.on('user-connected', (userId) => {
     // Remove any existing mapping for this user (in case of reconnection)
     for (const [uid, sid] of connectedUsers.entries()) {
       if (uid === userId && sid !== socket.id) {
         connectedUsers.delete(uid);
-        console.log('Removed old socket mapping for user:', userId);
+        debug('Removed old socket mapping for user:', userId);
       }
     }
     connectedUsers.set(userId, socket.id);
-    console.log('✅ User registered:', userId, 'Socket:', socket.id);
-    console.log('📊 Active users:', Array.from(connectedUsers.keys()));
+    debug('✅ User registered:', userId, 'Socket:', socket.id);
+    debug('📊 Active users:', Array.from(connectedUsers.keys()));
   });
 
   socket.on('send-message', async (data) => {
-    console.log('📨 Received message:', data);
+    debug('📨 Received message:', data);
     try {
       const Message = require('./models/Message');
       const User = require('./models/User');
@@ -113,7 +133,7 @@ io.on('connection', (socket) => {
       });
       await message.save();
       
-      console.log('✅ Message saved to DB:', message._id);
+      debug('✅ Message saved to DB:', message._id);
       
       const messageData = {
         _id: message._id.toString(),
@@ -125,20 +145,20 @@ io.on('connection', (socket) => {
       
       // Send to receiver if online
       const receiverSocketId = connectedUsers.get(data.receiver);
-      console.log('🔍 Looking for receiver:', data.receiver);
-      console.log('🔍 Receiver Socket ID:', receiverSocketId);
-      console.log('🔍 All connected users:', Array.from(connectedUsers.entries()));
+      debug('🔍 Looking for receiver:', data.receiver);
+      debug('🔍 Receiver Socket ID:', receiverSocketId);
+      debug('🔍 All connected users:', Array.from(connectedUsers.entries()));
       
       if (receiverSocketId) {
         io.to(receiverSocketId).emit('receive-message', messageData);
-        console.log('✅ Message sent to receiver socket:', receiverSocketId);
+        debug('✅ Message sent to receiver socket:', receiverSocketId);
       } else {
-        console.log('⚠️ Receiver not online');
+        debug('⚠️ Receiver not online');
       }
       
       // Confirm to sender
       socket.emit('message-sent', messageData);
-      console.log('✅ Message confirmed to sender');
+      debug('✅ Message confirmed to sender');
       
     } catch (error) {
       console.error('❌ Message error:', error);
@@ -147,7 +167,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('call-user', (data) => {
-    console.log('Call initiated from', data.from, 'to', data.to);
+    debug('Call initiated from', data.from, 'to', data.to);
     const receiverSocketId = connectedUsers.get(data.to);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit('call-signal', {
@@ -155,18 +175,18 @@ io.on('connection', (socket) => {
         signal: data.signal,
         callType: data.callType
       });
-      console.log('Call signal sent to', data.to);
+      debug('Call signal sent to', data.to);
     } else {
-      console.log('Receiver not online for call');
+      debug('Receiver not online for call');
     }
   });
 
   socket.on('answer-call', (data) => {
-    console.log('Call answered by', data.to);
+    debug('Call answered by', data.to);
     const callerSocketId = connectedUsers.get(data.to);
     if (callerSocketId) {
       io.to(callerSocketId).emit('call-accepted', data.signal);
-      console.log('Call accepted signal sent');
+      debug('Call accepted signal sent');
     }
   });
 
@@ -180,7 +200,7 @@ io.on('connection', (socket) => {
   // Meeting room events
   socket.on('join-meeting', (data) => {
     const { meetingId, userId, userName } = data;
-    console.log('User joining meeting:', data);
+    debug('User joining meeting:', data);
     
     socket.join(meetingId);
     socket.meetingId = meetingId;
@@ -199,7 +219,7 @@ io.on('connection', (socket) => {
       userName: p.userName
     }));
     
-    console.log('Existing participants in meeting:', existingParticipants);
+    debug('Existing participants in meeting:', existingParticipants);
     
     room.add({
       socketId: socket.id,
@@ -215,7 +235,7 @@ io.on('connection', (socket) => {
       userName
     });
     
-    console.log(`User ${userName} joined meeting ${meetingId}. Total participants: ${room.size}`);
+    debug(`User ${userName} joined meeting ${meetingId}. Total participants: ${room.size}`);
   });
 
   socket.on('screen-share-status', (data) => {
@@ -227,7 +247,7 @@ io.on('connection', (socket) => {
 
   socket.on('send-signal', (data) => {
     const { to, signal } = data;
-    console.log('Sending signal from', socket.id, 'to', to);
+    debug('Sending signal from', socket.id, 'to', to);
     io.to(to).emit('receive-signal', {
       from: socket.id,
       userId: socket.userId,
@@ -238,7 +258,7 @@ io.on('connection', (socket) => {
 
   socket.on('return-signal', (data) => {
     const { to, signal } = data;
-    console.log('Returning signal from', socket.id, 'to', to);
+    debug('Returning signal from', socket.id, 'to', to);
     io.to(to).emit('signal-returned', {
       from: socket.id,
       userId: socket.userId,
@@ -249,7 +269,7 @@ io.on('connection', (socket) => {
 
   socket.on('leave-meeting', (data) => {
     const { meetingId, userId } = data;
-    console.log('User leaving meeting:', userId, meetingId);
+    debug('User leaving meeting:', userId, meetingId);
     
     if (meetingRooms.has(meetingId)) {
       const room = meetingRooms.get(meetingId);
@@ -272,7 +292,7 @@ io.on('connection', (socket) => {
     for (const [userId, socketId] of connectedUsers.entries()) {
       if (socketId === socket.id) {
         connectedUsers.delete(userId);
-        console.log('User disconnected:', userId);
+        debug('User disconnected:', userId);
         break;
       }
     }
@@ -297,13 +317,13 @@ io.on('connection', (socket) => {
       socket.to(meetingId).emit('user-left', { socketId: socket.id, userId });
     }
     
-    console.log('Socket disconnected:', socket.id);
+    debug('Socket disconnected:', socket.id);
   });
 });
 
 const PORT = process.env.PORT || 8001;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+  debug(`Server running on port ${PORT}`);
 });
 
 module.exports = { app, io };

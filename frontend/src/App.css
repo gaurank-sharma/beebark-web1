@@ -77,6 +77,33 @@
   @apply w-full py-4 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold rounded-full transition-all duration-200 shadow-lg hover:shadow-xl;
 }
 
+/* Role selection cards (registration step 1) */
+.role-card {
+  @apply flex items-center gap-4 w-full p-4 rounded-2xl border-2 border-gray-200 bg-white hover:border-yellow-400 hover:shadow-md transition-all duration-200;
+}
+
+/* Multi-select cards (onboarding intent) */
+.select-card {
+  @apply flex items-center gap-3 w-full p-3.5 rounded-xl border-2 border-gray-200 bg-white hover:border-yellow-300 transition-all duration-200;
+}
+.select-card-active {
+  @apply border-yellow-400 bg-yellow-50;
+}
+
+/* Selectable chips (onboarding industry / tags) */
+.chip {
+  @apply inline-flex items-center gap-1.5 px-4 py-2 rounded-full border-2 border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-yellow-300 transition-all duration-200;
+}
+.chip-active {
+  @apply border-yellow-400 bg-yellow-400 text-black;
+}
+
+/* OTP single-digit input boxes */
+.otp-box {
+  @apply w-full aspect-square text-center text-xl sm:text-2xl font-bold text-black border-2 border-gray-200 rounded-xl bg-white focus:border-yellow-400 focus:ring-2 focus:ring-yellow-200 focus:outline-none transition-all;
+  max-width: 56px;
+}
+
 /* Card Styles */
 .pro-match-badge {
   @apply absolute top-4 left-4 bg-black text-white px-3 py-1 rounded-full text-xs font-bold;
