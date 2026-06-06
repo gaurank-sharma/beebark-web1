@@ -23,43 +23,6 @@ const BrandMark = ({ className = '' }) => (
   </div>
 );
 
-const Honeycomb = () => (
-  <svg viewBox="0 0 400 400" className="w-52 h-52 xl:w-60 xl:h-60 drop-shadow-xl" aria-hidden="true">
-    <defs>
-      <linearGradient id="cell" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stopColor="#1A1A1A" />
-        <stop offset="100%" stopColor="#333333" />
-      </linearGradient>
-    </defs>
-    {[
-      [140, 90], [220, 90],
-      [100, 160], [180, 160], [260, 160],
-      [140, 230], [220, 230],
-      [180, 300]
-    ].map(([cx, cy], i) => {
-      const r = 38;
-      const pts = Array.from({ length: 6 }, (_, k) => {
-        const a = (Math.PI / 180) * (60 * k - 30);
-        return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
-      }).join(' ');
-      const filled = [1, 2, 4, 6].includes(i);
-      return (
-        <polygon
-          key={i}
-          points={pts}
-          fill={filled ? 'url(#cell)' : '#FFFFFF'}
-          opacity={filled ? 0.95 : 0.9}
-          stroke="#1A1A1A"
-          strokeWidth="2"
-        />
-      );
-    })}
-    <circle cx="300" cy="300" r="26" fill="#1A1A1A" />
-    <circle cx="291" cy="294" r="4" fill="#FFC107" />
-    <circle cx="309" cy="294" r="4" fill="#FFC107" />
-  </svg>
-);
-
 const AuthShell = ({ children, headline, subline }) => {
   return (
     <div className="min-h-screen flex bg-white" data-testid="auth-shell">
@@ -80,9 +43,6 @@ const AuthShell = ({ children, headline, subline }) => {
               </li>
             ))}
           </ul>
-          <div className="mt-10 flex justify-center">
-            <Honeycomb />
-          </div>
         </div>
       </div>
 
