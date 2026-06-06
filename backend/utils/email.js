@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 // Brand palette
 const BRAND = {
@@ -102,6 +103,22 @@ const button = (label, href) => `
   </table>`;
 
 const send = async ({ to, subject, html }) => {
+  // If a mail relay is configured (e.g. a Vercel function whose network allows
+  // outbound SMTP), send through it over HTTPS — useful when the backend host
+  // blocks SMTP (Render free tier). Otherwise send via SMTP directly.
+  if (process.env.MAIL_SERVICE_URL) {
+    const base = process.env.MAIL_SERVICE_URL.replace(/\/+$/, '');
+    await axios.post(
+      `${base}/api/send`,
+      { to, subject, html },
+      {
+        headers: { 'x-mail-secret': process.env.MAIL_SHARED_SECRET || '' },
+        timeout: 15000
+      }
+    );
+    return;
+  }
+
   const from = process.env.EMAIL_FROM || 'BeeBark <noreply@thebeebark.com>';
   await getTransporter().sendMail({ from, to, subject, html });
 };
