@@ -23,9 +23,14 @@ const getTransporter = () => {
     port,
     secure: port === 465, // SSL for 465, STARTTLS otherwise
     auth: {
-      user: process.env.EMAIL_USER,
+      // Fall back to EMAIL_FROM if EMAIL_USER isn't set (common with GoDaddy)
+      user: process.env.EMAIL_USER || process.env.EMAIL_FROM,
       pass: process.env.EMAIL_PASSWORD
-    }
+    },
+    // Fail fast instead of hanging ~19s when the SMTP host is unreachable
+    connectionTimeout: 10000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000
   });
   return cachedTransporter;
 };
