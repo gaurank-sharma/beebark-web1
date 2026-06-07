@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { FiEdit2, FiSave, FiPlus, FiTrash2, FiBriefcase, FiMapPin } from 'react-icons/fi';
 import { API_URL } from '../config/api';
 import { INTENTS, INDUSTRIES } from '../config/onboarding';
+import ImageUpload from '../components/ImageUpload';
 
 const ROLE_LABELS = {
   student: 'Student',
@@ -144,8 +145,17 @@ const Profile = () => {
                     <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="City, Country" className="border-slate-300" data-testid="location-input" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Profile Picture URL</Label>
-                    <Input value={formData.profilePic} onChange={(e) => setFormData({ ...formData, profilePic: e.target.value })} className="border-slate-300" data-testid="profile-pic-input" />
+                    <Label>Profile photo</Label>
+                    {formData.profilePic ? (
+                      <div className="flex items-center gap-4">
+                        <img src={formData.profilePic} alt="Profile" className="h-20 w-20 rounded-full object-cover border" />
+                        <button type="button" onClick={() => setFormData({ ...formData, profilePic: '' })} className="text-sm text-gray-500 hover:text-black">
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <ImageUpload onUploadComplete={(url) => setFormData((f) => ({ ...f, profilePic: url }))} />
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>Bio</Label>
