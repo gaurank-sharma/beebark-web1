@@ -111,24 +111,38 @@ const button = (label, href) => `
   </table>`;
 
 const send = async ({ to, subject, html }) => {
+  const started = Date.now();
   // If a mail relay is configured (e.g. a Vercel function whose network allows
   // outbound SMTP), send through it over HTTPS — useful when the backend host
   // blocks SMTP (Render free tier). Otherwise send via SMTP directly.
   if (MAIL_SERVICE_URL) {
     const base = MAIL_SERVICE_URL.replace(/\/+$/, '');
-    await axios.post(
-      `${base}/api/send`,
-      { to, subject, html },
-      {
-        headers: { 'x-mail-secret': process.env.MAIL_SHARED_SECRET || '' },
-        timeout: 15000
-      }
-    );
+    try {
+      await axios.post(
+        `${base}/api/send`,
+        { to, subject, html },
+        {
+          headers: { 'x-mail-secret': process.env.MAIL_SHARED_SECRET || '' },
+          timeout: 15000
+        }
+      );
+      console.log(`📧 Mail sent to ${to} via relay in ${Date.now() - started}ms`);
+    } catch (err) {
+      // Surface the relay's real reason (e.g. "535 Authentication Failed")
+      const status = err.response?.status;
+      const detail =
+        err.response?.data?.detail ||
+        err.response?.data?.error ||
+        err.code ||
+        err.message;
+      throw new Error(`mail relay error${status ? ` (HTTP ${status})` : ''}: ${detail}`);
+    }
     return;
   }
 
   const from = process.env.EMAIL_FROM || 'BeeBark <noreply@thebeebark.com>';
   await getTransporter().sendMail({ from, to, subject, html });
+  console.log(`📧 Mail sent to ${to} via SMTP in ${Date.now() - started}ms`);
 };
 
 // --- OTP verification email ---

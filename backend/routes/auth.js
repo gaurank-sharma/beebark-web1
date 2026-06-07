@@ -143,8 +143,11 @@ router.post(
       try {
         await sendOtpEmail(user.email, user.name, otp);
       } catch (mailErr) {
-        console.error('Failed to send OTP email:', mailErr.message);
-        return res.status(502).json({ error: 'Could not send verification email. Please try again.' });
+        console.error('❌ Failed to send OTP email:', mailErr.message);
+        return res.status(502).json({
+          error: 'Could not send verification email. Please try again.',
+          detail: mailErr.message
+        });
       }
 
       res.status(201).json({
@@ -153,8 +156,8 @@ router.post(
         email: user.email
       });
     } catch (error) {
-      console.error('Registration error:', error);
-      res.status(500).json({ error: 'Registration failed' });
+      console.error('❌ Registration error:', error);
+      res.status(500).json({ error: 'Registration failed', detail: error.message });
     }
   }
 );
