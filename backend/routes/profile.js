@@ -54,11 +54,12 @@ router.get('/:userId', auth, async (req, res) => {
 
 router.put('/update', auth, async (req, res) => {
   try {
-    const { name, bio, profilePic, skills, experience } = req.body;
-    
+    const { name, bio, profilePic, skills, experience, location } = req.body;
+
     const updateData = {};
     if (name) updateData.name = name;
     if (bio !== undefined) updateData.bio = bio;
+    if (location !== undefined) updateData.location = String(location).slice(0, 120);
     if (profilePic !== undefined) updateData.profilePic = profilePic;
     if (skills) updateData.skills = skills;
     if (experience) updateData.experience = experience;
