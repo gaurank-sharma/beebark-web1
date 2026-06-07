@@ -226,4 +226,34 @@ const sendPasswordResetEmail = async (toEmail, resetUrl) => {
   });
 };
 
-module.exports = { sendOtpEmail, sendWelcomeEmail, sendPasswordResetEmail };
+// --- Password reset via OTP code ---
+const sendPasswordResetOtpEmail = async (toEmail, name, otp) => {
+  const firstName = (name || '').split(' ')[0] || 'there';
+  const digits = String(otp)
+    .split('')
+    .map(
+      (d) =>
+        `<span style="display:inline-block;min-width:44px;margin:0 4px;padding:14px 0;background:${BRAND.bg};border:1px solid ${BRAND.border};border-radius:10px;font-size:26px;font-weight:800;color:${BRAND.black};text-align:center;">${d}</span>`
+    )
+    .join('');
+
+  const body = `
+    <p style="margin:0 0 16px 0;font-size:15px;color:${BRAND.ink};line-height:1.6;">Hi ${firstName},</p>
+    <p style="margin:0 0 8px 0;font-size:15px;color:${BRAND.ink};line-height:1.6;">Use the code below to reset your BeeBark password.</p>
+    <div style="text-align:center;margin:24px 0;white-space:nowrap;">${digits}</div>
+    <p style="margin:0 0 8px 0;font-size:14px;color:${BRAND.muted};line-height:1.6;">This code expires in <strong>10 minutes</strong>. For your security, never share it with anyone.</p>
+  `;
+
+  await send({
+    to: toEmail,
+    subject: `${otp} is your BeeBark password reset code`,
+    html: layout({
+      preheader: `Your BeeBark password reset code is ${otp}`,
+      heading: 'Reset your password',
+      body,
+      footerNote: "If you didn't request this, you can safely ignore this email — your password won't change."
+    })
+  });
+};
+
+module.exports = { sendOtpEmail, sendWelcomeEmail, sendPasswordResetEmail, sendPasswordResetOtpEmail };

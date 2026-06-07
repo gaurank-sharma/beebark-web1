@@ -19,7 +19,7 @@ const {
 const {
   sendOtpEmail,
   sendWelcomeEmail,
-  sendPasswordResetEmail
+  sendPasswordResetOtpEmail
 } = require('../utils/email');
 
 // Roles a user may self-select at signup (others are reserved/legacy)
@@ -411,6 +411,7 @@ router.post(
   }
 );
 
+// Step 1 — request a password reset: email a 6-digit OTP code
 router.post(
   '/forgot-password',
   loginLimiter,
@@ -420,21 +421,28 @@ router.post(
       if (!handleValidation(req, res)) return;
       const user = await User.findOne({ email: req.body.email });
 
-      // Always respond the same way to avoid leaking which emails exist
+      // Only local accounts (with a password) can reset; respond generically either way
       if (user && user.password) {
-        const resetToken = crypto.randomBytes(32).toString('hex');
-        user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        user.resetPasswordExpires = Date.now() + 3600000;
-        await user.save();
-        const resetUrl = `${process.env.APP_URL}/reset-password/${resetToken}`;
-        try {
-          await sendPasswordResetEmail(user.email, resetUrl);
-        } catch (mailErr) {
-          console.error('Failed to send reset email:', mailErr.message);
+        const last = user.passwordReset?.lastSentAt;
+        const onCooldown = last && Date.now() - new Date(last).getTime() < OTP_RESEND_COOLDOWN_MS;
+        if (!onCooldown) {
+          const otp = generateOtp();
+          user.passwordReset = {
+            otpHash: hashOtp(otp),
+            expiresAt: new Date(Date.now() + OTP_TTL_MS),
+            attempts: 0,
+            lastSentAt: new Date()
+          };
+          await user.save();
+          try {
+            await sendPasswordResetOtpEmail(user.email, user.name, otp);
+          } catch (mailErr) {
+            console.error('❌ Failed to send reset code:', mailErr.message);
+          }
         }
       }
 
-      res.json({ message: 'If an account exists for that email, a reset link has been sent.' });
+      res.json({ message: 'If an account exists for that email, a reset code has been sent.' });
     } catch (error) {
       console.error('Forgot password error:', error);
       res.status(500).json({ error: 'Failed to process request' });
@@ -442,24 +450,41 @@ router.post(
   }
 );
 
+// Step 2 — verify the emailed OTP and set a new password
 router.post(
-  '/reset-password/:token',
-  [body('password').custom(strongPassword).withMessage(PASSWORD_MESSAGE)],
+  '/reset-password',
+  otpLimiter,
+  [
+    body('email').isEmail().withMessage('A valid email is required').normalizeEmail(),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('Enter the 6-digit code').isNumeric().withMessage('Code must be numeric'),
+    body('password').custom(strongPassword).withMessage(PASSWORD_MESSAGE)
+  ],
   async (req, res) => {
     try {
       if (!handleValidation(req, res)) return;
+      const { email, otp, password } = req.body;
 
-      const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
-      const user = await User.findOne({
-        resetPasswordToken: hashedToken,
-        resetPasswordExpires: { $gt: Date.now() }
-      });
+      const user = await User.findOne({ email });
+      const pr = user && user.passwordReset;
+      if (!user || !pr || !pr.otpHash) {
+        return res.status(400).json({ error: 'No active reset code. Please request a new one.' });
+      }
+      if (Date.now() > new Date(pr.expiresAt).getTime()) {
+        return res.status(400).json({ error: 'Reset code expired. Please request a new one.' });
+      }
+      if (pr.attempts >= OTP_MAX_ATTEMPTS) {
+        return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new code.' });
+      }
+      if (!verifyOtp(otp, pr.otpHash)) {
+        user.passwordReset.attempts = (pr.attempts || 0) + 1;
+        await user.save();
+        const left = Math.max(0, OTP_MAX_ATTEMPTS - user.passwordReset.attempts);
+        return res.status(400).json({ error: `Incorrect code. ${left} attempt${left === 1 ? '' : 's'} remaining.` });
+      }
 
-      if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
-
-      user.password = req.body.password;
-      user.resetPasswordToken = undefined;
-      user.resetPasswordExpires = undefined;
+      user.password = password; // re-hashed by pre-save hook
+      user.passwordReset = undefined;
+      user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidate existing sessions
       await user.save();
 
       res.json({ message: 'Password reset successful' });

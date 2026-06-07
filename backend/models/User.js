@@ -108,6 +108,12 @@ const userSchema = new mongoose.Schema({
     attempts: { type: Number, default: 0 },
     lastSentAt: Date
   },
+  passwordReset: {
+    otpHash: String,
+    expiresAt: Date,
+    attempts: { type: Number, default: 0 },
+    lastSentAt: Date
+  },
   resume: {
     url: String,
     fileName: String,

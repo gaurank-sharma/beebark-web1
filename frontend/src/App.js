@@ -9,7 +9,6 @@ import Register from './pages/Register';
 import VerifyEmail from './pages/VerifyEmail';
 import Onboarding from './pages/Onboarding';
 import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Feed from './pages/Feed';
 import Profile from './pages/Profile';
@@ -90,7 +89,6 @@ function App() {
             <Route path="/verify-email" element={<PublicRoute><VerifyEmail /></PublicRoute>} />
             <Route path="/onboarding" element={<OnboardingRoute />} />
             <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
-            <Route path="/reset-password/:token" element={<PublicRoute><ResetPassword /></PublicRoute>} />
             <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/feed" element={<PrivateRoute><Feed /></PrivateRoute>} />
             <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
