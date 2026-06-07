@@ -10,7 +10,7 @@
 // import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 // import { Button } from '../components/ui/button';
 // import { toast } from 'sonner';
-// import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip, FiPhoneOff, FiMic, FiMicOff, FiVideoOff } from 'react-icons/fi';
+// import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip, FiPhoneOff, FiMic, FiMicOff, FiVideoOff, FiArrowLeft } from 'react-icons/fi';
 // import { API_URL } from '../config/api';
 
 // const Chat = () => {
@@ -545,7 +545,7 @@ import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
-import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip, FiPhoneOff, FiMic, FiMicOff, FiVideoOff } from 'react-icons/fi';
+import { FiSend, FiPhone, FiVideo, FiImage, FiPaperclip, FiPhoneOff, FiMic, FiMicOff, FiVideoOff, FiArrowLeft } from 'react-icons/fi';
 import { API_URL } from '../config/api';
 
 // CRITICAL: This fixes connection drops in direct chats
@@ -819,8 +819,8 @@ const Chat = () => {
       <Sidebar />
       <TopBar />
       <div className="lg:ml-64 mt-16 flex h-[calc(100vh-4rem)]">
-        {/* Connections List */}
-        <div className="w-80 border-r border-gray-200 flex flex-col bg-gray-50">
+        {/* Connections List — full width on mobile; hidden once a chat is open */}
+        <div className={`w-full md:w-80 border-r border-gray-200 flex-col bg-gray-50 ${selectedConnection ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-4">
             <Input placeholder="Search messages..." className="bg-white" />
           </div>
@@ -844,13 +844,20 @@ const Chat = () => {
           </div>
         </div>
 
-        {/* Chat Area */}
-        <div className="flex-1 flex flex-col">
+        {/* Chat Area — hidden on mobile until a chat is selected */}
+        <div className={`flex-1 flex-col ${selectedConnection ? 'flex' : 'hidden md:flex'}`}>
           {selectedConnection ? (
             <>
               {/* Chat Header */}
-              <div className="h-16 border-b flex items-center justify-between px-6 bg-white">
+              <div className="h-16 border-b flex items-center justify-between px-4 sm:px-6 bg-white">
                 <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => setSelectedConnection(null)}
+                    className="md:hidden p-1 -ml-1 text-gray-600 hover:text-black"
+                    aria-label="Back to conversations"
+                  >
+                    <FiArrowLeft className="w-5 h-5" />
+                  </button>
                   <Avatar className="w-10 h-10">
                     <AvatarImage src={selectedConnection.profilePic} />
                     <AvatarFallback>{selectedConnection.name.charAt(0)}</AvatarFallback>

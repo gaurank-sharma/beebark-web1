@@ -130,7 +130,7 @@ const Connections = () => {
       <div className="lg:ml-64 mt-16 p-4 sm:p-6 lg:p-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-black mb-2">Network & Growth</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-black mb-2">Network & Growth</h1>
           <p className="text-gray-600">Find and connect with professionals. Search by name, username, or email.</p>
         </div>
 
@@ -169,7 +169,7 @@ const Connections = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6 bg-gray-100 p-1 rounded-xl">
+          <TabsList className="flex w-full justify-start overflow-x-auto mb-6 bg-gray-100 p-1 rounded-xl">
             <TabsTrigger value="suggestions" className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black rounded-lg">
               Suggestions
             </TabsTrigger>

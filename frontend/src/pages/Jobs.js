@@ -137,9 +137,9 @@ const Jobs = () => {
       <Sidebar />
       <TopBar />
       <div className="lg:ml-64 mt-16 p-4 sm:p-6 lg:p-8">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-black mb-2">Job Portal</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-black mb-2">Job Portal</h1>
             <p className="text-gray-600">AI-powered job matching for professionals</p>
           </div>
           <div className="flex space-x-3">
@@ -170,7 +170,7 @@ const Jobs = () => {
                       <Label>Company</Label>
                       <Input value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} required />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <Label>Location</Label>
                         <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
@@ -193,7 +193,7 @@ const Jobs = () => {
         </div>
 
         <Tabs defaultValue="browse" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsList className="flex w-full justify-start overflow-x-auto mb-6">
             <TabsTrigger value="browse">Browse Jobs</TabsTrigger>
             <TabsTrigger value="recommended">Recommended ({recommendedJobs.length})</TabsTrigger>
             <TabsTrigger value="applied">My Applications ({myApplications.length})</TabsTrigger>

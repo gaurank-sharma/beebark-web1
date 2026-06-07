@@ -181,7 +181,7 @@ const Meetings = () => {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label className="text-base font-semibold mb-2 flex items-center">
                   <FiCalendar className="mr-2" /> Date
