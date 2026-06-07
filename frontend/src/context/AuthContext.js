@@ -4,8 +4,9 @@ import { API_URL } from '../config/api';
 
 const AuthContext = createContext();
 
-// Fail requests that hang (e.g. slow/dropped network) instead of spinning forever
-axios.defaults.timeout = 20000;
+// Fail requests that hang instead of spinning forever. Generous enough to
+// survive a Render free-tier cold start (~30-50s) without being cancelled.
+axios.defaults.timeout = 45000;
 
 // Token is kept in localStorage when "Remember me" is on (persists across
 // browser restarts) and in sessionStorage otherwise (cleared when tab closes).
@@ -46,15 +47,28 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   const fetchCurrentUser = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/profile/me`);
-      setUser(response.data.user);
-    } catch (error) {
-      console.error('Failed to fetch user:', error);
-      logout();
-    } finally {
-      setLoading(false);
+    // Retry transient failures (cold start / flaky network) and only log the
+    // user out when the token is actually rejected (401/403) — never on a
+    // timeout, which previously kicked valid users to /login.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await axios.get(`${API_URL}/api/profile/me`);
+        setUser(response.data.user);
+        setLoading(false);
+        return;
+      } catch (error) {
+        const status = error.response?.status;
+        if (status === 401 || status === 403) {
+          logout();
+          setLoading(false);
+          return;
+        }
+        // transient error — wait briefly and retry, keep the token
+        await new Promise((r) => setTimeout(r, 2000));
+      }
     }
+    console.error('Server unreachable; keeping session token for retry.');
+    setLoading(false);
   };
 
   // Finalize an authenticated session from a token + user payload

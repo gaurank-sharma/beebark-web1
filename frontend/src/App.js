@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
+import { UIProvider } from './context/UIContext';
 import { Toaster } from './components/ui/sonner';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -79,6 +80,7 @@ function App() {
     <Router>
       <AuthProvider>
         <SocketProvider>
+          <UIProvider>
           <Toaster position="top-right" richColors />
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" />} />
@@ -103,6 +105,7 @@ function App() {
             <Route path="/memories" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/wallet" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           </Routes>
+          </UIProvider>
         </SocketProvider>
       </AuthProvider>
     </Router>

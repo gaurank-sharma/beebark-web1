@@ -336,7 +336,7 @@
 //     <div className="min-h-screen bg-white">
 //       <Sidebar />
 //       <TopBar />
-//       <div className="ml-64 mt-16 flex h-[calc(100vh-4rem)]">
+//       <div className="lg:ml-64 mt-16 flex h-[calc(100vh-4rem)]">
 //         {/* Connections List */}
 //         <div className="w-80 border-r border-gray-200 flex flex-col bg-gray-50">
 //           <div className="p-4">
@@ -818,7 +818,7 @@ const Chat = () => {
     <div className="min-h-screen bg-white">
       <Sidebar />
       <TopBar />
-      <div className="ml-64 mt-16 flex h-[calc(100vh-4rem)]">
+      <div className="lg:ml-64 mt-16 flex h-[calc(100vh-4rem)]">
         {/* Connections List */}
         <div className="w-80 border-r border-gray-200 flex flex-col bg-gray-50">
           <div className="p-4">

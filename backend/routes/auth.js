@@ -109,6 +109,27 @@ router.post(
         return res.status(400).json({ error: 'Email already registered. Please log in.' });
       }
 
+      // Avoid OTP churn: if an unverified user re-submits within the cooldown and
+      // their last code is still valid, keep that code (don't invalidate the one
+      // we just emailed). They can use the latest email or hit "Resend".
+      if (existing && !existing.isVerified) {
+        const ev = existing.emailVerification || {};
+        const stillValid = ev.expiresAt && Date.now() < new Date(ev.expiresAt).getTime();
+        const recentlySent =
+          ev.lastSentAt && Date.now() - new Date(ev.lastSentAt).getTime() < OTP_RESEND_COOLDOWN_MS;
+        if (stillValid && recentlySent && ev.otpHash) {
+          existing.name = name;
+          existing.password = password;
+          existing.role = role;
+          await existing.save();
+          return res.status(201).json({
+            message: 'A verification code was already sent. Please check your email.',
+            requiresVerification: true,
+            email: existing.email
+          });
+        }
+      }
+
       const otp = generateOtp();
       const verification = {
         otpHash: hashOtp(otp),

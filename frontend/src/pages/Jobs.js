@@ -136,7 +136,7 @@ const Jobs = () => {
     <div className="min-h-screen bg-gray-50">
       <Sidebar />
       <TopBar />
-      <div className="ml-64 mt-16 p-8">
+      <div className="lg:ml-64 mt-16 p-4 sm:p-6 lg:p-8">
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-black mb-2">Job Portal</h1>

@@ -21,7 +21,7 @@ const Dashboard = () => {
       <Sidebar />
       <TopBar />
       
-      <div className="ml-64 mt-16 p-8">
+      <div className="lg:ml-64 mt-16 p-4 sm:p-6 lg:p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-black mb-2">Welcome back, {user?.name}!</h1>
           <p className="text-slate-600">Here's what's happening with your network today.</p>

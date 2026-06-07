@@ -127,7 +127,7 @@ const Connections = () => {
     <div className="min-h-screen bg-gray-50" data-testid="connections-page">
       <Sidebar />
       <TopBar />
-      <div className="ml-64 mt-16 p-8">
+      <div className="lg:ml-64 mt-16 p-4 sm:p-6 lg:p-8">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-black mb-2">Network & Growth</h1>
