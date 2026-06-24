@@ -110,6 +110,12 @@ export const AuthProvider = ({ children }) => {
     return establishSession(response.data, true);
   };
 
+  // Sign in / sign up with a LinkedIn authorization code (OpenID Connect)
+  const linkedinLogin = async (code, redirectUri) => {
+    const response = await axios.post(`${API_URL}/api/auth/linkedin`, { code, redirectUri });
+    return establishSession(response.data, true);
+  };
+
   // Save onboarding data; refreshes the user so onboardingCompleted is current
   const updateOnboarding = async (payload) => {
     const response = await axios.put(`${API_URL}/api/profile/onboarding`, payload);
@@ -143,6 +149,7 @@ export const AuthProvider = ({ children }) => {
     verifyOtp,
     resendOtp,
     googleLogin,
+    linkedinLogin,
     updateOnboarding,
     logout,
     logoutAll,

@@ -30,10 +30,15 @@ const userSchema = new mongoose.Schema({
   },
   authProvider: {
     type: String,
-    enum: ['local', 'google'],
+    enum: ['local', 'google', 'linkedin'],
     default: 'local'
   },
   googleId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  linkedinId: {
     type: String,
     unique: true,
     sparse: true

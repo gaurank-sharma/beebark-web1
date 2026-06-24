@@ -410,6 +410,102 @@ router.post(
   }
 );
 
+/**
+ * LinkedIn sign-in (OpenID Connect, authorization-code flow).
+ * Frontend sends the `code` + `redirectUri` it received from LinkedIn; we
+ * exchange it for tokens and read basic profile (name, email, picture).
+ */
+router.post(
+  '/linkedin',
+  loginLimiter,
+  [body('code').notEmpty().withMessage('Missing LinkedIn code'), body('redirectUri').notEmpty()],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+
+      const clientId = process.env.LINKEDIN_CLIENT_ID;
+      const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
+      if (!clientId || !clientSecret) {
+        return res.status(503).json({ error: 'LinkedIn sign-in is not configured on the server.' });
+      }
+
+      // 1) Exchange the authorization code for an access token
+      let accessToken;
+      try {
+        const params = new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: req.body.code,
+          redirect_uri: req.body.redirectUri,
+          client_id: clientId,
+          client_secret: clientSecret
+        });
+        const tokenRes = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', params.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 12000
+        });
+        accessToken = tokenRes.data.access_token;
+      } catch (e) {
+        console.error('LinkedIn token exchange failed:', e.response?.data || e.message);
+        return res.status(401).json({ error: 'LinkedIn authorization failed' });
+      }
+
+      // 2) Fetch the user's basic profile (OpenID userinfo)
+      let profile;
+      try {
+        const { data } = await axios.get('https://api.linkedin.com/v2/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 12000
+        });
+        profile = data; // { sub, email, email_verified, name, picture, ... }
+      } catch (e) {
+        console.error('LinkedIn userinfo failed:', e.response?.data || e.message);
+        return res.status(401).json({ error: 'Could not read LinkedIn profile' });
+      }
+
+      if (!profile.email) {
+        return res.status(401).json({ error: 'LinkedIn did not share an email for this account' });
+      }
+
+      const email = String(profile.email).toLowerCase();
+      let user = await User.findOne({ $or: [{ linkedinId: profile.sub }, { email }] });
+      let isNewUser = false;
+
+      if (user) {
+        let changed = false;
+        if (!user.linkedinId) { user.linkedinId = profile.sub; changed = true; }
+        if (!user.isVerified) { user.isVerified = true; changed = true; }
+        if (changed) await user.save();
+      } else {
+        isNewUser = true;
+        user = new User({
+          name: profile.name || email.split('@')[0],
+          username: await generateUniqueUsername(email),
+          email,
+          linkedinId: profile.sub,
+          authProvider: 'linkedin',
+          isVerified: true,
+          role: SELECTABLE_ROLES.includes(req.body.role) ? req.body.role : 'professional',
+          profilePic: profile.picture || ''
+        });
+        await user.save();
+        sendWelcomeEmail(user.email, user.name).catch((e) =>
+          console.error('Failed to send welcome email:', e.message)
+        );
+      }
+
+      res.json({
+        message: 'LinkedIn sign-in successful',
+        token: signToken(user),
+        user: publicUser(user),
+        isNewUser
+      });
+    } catch (error) {
+      console.error('LinkedIn auth error:', error);
+      res.status(500).json({ error: 'LinkedIn sign-in failed' });
+    }
+  }
+);
+
 // Step 1 — request a password reset: email a 6-digit OTP code
 router.post(
   '/forgot-password',
