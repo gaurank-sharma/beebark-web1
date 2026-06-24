@@ -116,6 +116,12 @@ export const AuthProvider = ({ children }) => {
     return establishSession(response.data, true);
   };
 
+  // Sign in / sign up with a Firebase phone (SMS OTP) ID token
+  const firebaseLogin = async (idToken) => {
+    const response = await axios.post(`${API_URL}/api/auth/firebase`, { idToken });
+    return establishSession(response.data, true);
+  };
+
   // Save onboarding data; refreshes the user so onboardingCompleted is current
   const updateOnboarding = async (payload) => {
     const response = await axios.put(`${API_URL}/api/profile/onboarding`, payload);
@@ -150,6 +156,7 @@ export const AuthProvider = ({ children }) => {
     resendOtp,
     googleLogin,
     linkedinLogin,
+    firebaseLogin,
     updateOnboarding,
     logout,
     logoutAll,

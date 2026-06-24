@@ -11,6 +11,7 @@ import Onboarding from './pages/Onboarding';
 import ForgotPassword from './pages/ForgotPassword';
 import LinkedInCallback from './pages/LinkedInCallback';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import PhoneLogin from './pages/PhoneLogin';
 import Dashboard from './pages/Dashboard';
 import Feed from './pages/Feed';
 import Profile from './pages/Profile';
@@ -92,6 +93,7 @@ function App() {
             <Route path="/onboarding" element={<OnboardingRoute />} />
             <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
             <Route path="/auth/linkedin/callback" element={<LinkedInCallback />} />
+            <Route path="/phone-login" element={<PublicRoute><PhoneLogin /></PublicRoute>} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />

@@ -1,8 +1,11 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { FaLinkedin } from 'react-icons/fa';
+import { FiPhone } from 'react-icons/fi';
 import { toast } from 'sonner';
 import GoogleAuthButton from './GoogleAuthButton';
 import LinkedInButton, { LINKEDIN_ENABLED } from './LinkedInButton';
+import { FIREBASE_ENABLED } from '../../config/firebase';
 
 /**
  * Social sign-in block: Google sign-in + LinkedIn. LinkedIn renders a real
@@ -36,6 +39,17 @@ const SocialAuth = ({ onGoogleCredential, text = 'continue_with' }) => (
             Soon
           </span>
         </button>
+      )}
+
+      {FIREBASE_ENABLED && (
+        <Link
+          to="/phone-login"
+          className="w-full flex items-center justify-center gap-2 rounded-full border-2 border-gray-200 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          data-testid="phone-signin"
+        >
+          <FiPhone className="text-base" />
+          Continue with phone
+        </Link>
       )}
     </div>
   </div>

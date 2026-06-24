@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema({
   },
   authProvider: {
     type: String,
-    enum: ['local', 'google', 'linkedin'],
+    enum: ['local', 'google', 'linkedin', 'phone'],
     default: 'local'
   },
   googleId: {
@@ -42,6 +42,17 @@ const userSchema = new mongoose.Schema({
     type: String,
     unique: true,
     sparse: true
+  },
+  firebaseUid: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  phone: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
   },
   profilePic: {
     type: String,

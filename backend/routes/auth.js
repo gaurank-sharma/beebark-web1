@@ -7,6 +7,7 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 const rateLimit = require('../middleware/rateLimit');
+const { getAdmin } = require('../config/firebaseAdmin');
 const {
   OTP_TTL_MS,
   OTP_MAX_ATTEMPTS,
@@ -36,6 +37,7 @@ const publicUser = (user) => ({
   name: user.name,
   username: user.username,
   email: user.email,
+  phone: user.phone || '',
   role: user.role,
   intent: user.intent || [],
   industries: user.industries || [],
@@ -502,6 +504,83 @@ router.post(
     } catch (error) {
       console.error('LinkedIn auth error:', error);
       res.status(500).json({ error: 'LinkedIn sign-in failed' });
+    }
+  }
+);
+
+/**
+ * Phone (mobile) sign-in via Firebase. The SMS OTP is verified client-side by
+ * Firebase; the client sends the resulting Firebase ID token, which we verify
+ * with the Firebase Admin SDK, then create/link a user by phone number.
+ */
+router.post(
+  '/firebase',
+  loginLimiter,
+  [body('idToken').notEmpty().withMessage('Missing token')],
+  async (req, res) => {
+    try {
+      if (!handleValidation(req, res)) return;
+
+      let admin;
+      try {
+        admin = getAdmin();
+      } catch (e) {
+        console.error('Firebase admin init failed:', e.message);
+        return res.status(503).json({ error: 'Phone sign-in is not configured on the server.' });
+      }
+      if (!admin) {
+        return res.status(503).json({ error: 'Phone sign-in is not configured on the server.' });
+      }
+
+      let decoded;
+      try {
+        decoded = await admin.auth().verifyIdToken(req.body.idToken);
+      } catch (e) {
+        return res.status(401).json({ error: 'Invalid phone verification token' });
+      }
+
+      const phone = decoded.phone_number;
+      if (!phone) {
+        return res.status(400).json({ error: 'This sign-in did not include a phone number' });
+      }
+      const uid = decoded.uid;
+
+      let user = await User.findOne({ $or: [{ firebaseUid: uid }, { phone }] });
+      let isNewUser = false;
+
+      if (user) {
+        let changed = false;
+        if (!user.firebaseUid) { user.firebaseUid = uid; changed = true; }
+        if (!user.phone) { user.phone = phone; changed = true; }
+        if (!user.isVerified) { user.isVerified = true; changed = true; }
+        if (changed) await user.save();
+      } else {
+        isNewUser = true;
+        const digits = phone.replace(/[^0-9]/g, '');
+        user = new User({
+          name: decoded.name || 'New User',
+          username: await generateUniqueUsername(digits || 'user'),
+          // email is required + unique; phone-only users get a placeholder they
+          // can replace later. Real email can be collected during onboarding.
+          email: `${digits}@phone.beebark.local`,
+          phone,
+          firebaseUid: uid,
+          authProvider: 'phone',
+          isVerified: true,
+          role: SELECTABLE_ROLES.includes(req.body.role) ? req.body.role : 'professional'
+        });
+        await user.save();
+      }
+
+      res.json({
+        message: 'Phone sign-in successful',
+        token: signToken(user),
+        user: publicUser(user),
+        isNewUser
+      });
+    } catch (error) {
+      console.error('Firebase auth error:', error);
+      res.status(500).json({ error: 'Phone sign-in failed' });
     }
   }
 );
