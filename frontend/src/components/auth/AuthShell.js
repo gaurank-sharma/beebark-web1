@@ -47,10 +47,13 @@ const AuthShell = ({ children, headline, subline }) => {
       </div>
 
       {/* Right form panel */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center px-5 py-10 sm:px-8">
+      <div className="w-full lg:w-1/2 flex flex-col items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-md">
           <BrandMark className="lg:hidden mb-8" />
           {children}
+          <p className="mt-10 text-center text-xs text-gray-400">
+            <a href="/privacy" className="hover:text-gray-600">Privacy Policy</a>
+          </p>
         </div>
       </div>
     </div>
