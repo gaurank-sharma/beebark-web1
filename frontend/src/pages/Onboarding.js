@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { FaCheck, FaArrowLeft, FaTimes } from 'react-icons/fa';
 import ImageUpload from '../components/ImageUpload';
+import ResumeImport from '../components/ResumeImport';
 import { ROLES } from '../config/roles';
 import { INTENTS, INDUSTRIES } from '../config/onboarding';
 
@@ -176,6 +177,15 @@ const Onboarding = () => {
             {/* Step 4 — Profile */}
             {step === 3 && (
               <div className="mx-auto max-w-xl space-y-6" data-testid="onboarding-profile">
+                <div className="rounded-xl bg-yellow-50 border border-yellow-200 p-4">
+                  <p className="text-sm font-medium text-black mb-2">Have a résumé? Skip the typing.</p>
+                  <ResumeImport
+                    onImported={(data) => {
+                      if (Array.isArray(data?.skills)) setSkills(data.skills);
+                    }}
+                  />
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-black mb-2">Profile photo</label>
                   {profilePic ? (

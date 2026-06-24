@@ -15,6 +15,7 @@ import { FiEdit2, FiSave, FiPlus, FiTrash2, FiBriefcase, FiMapPin } from 'react-
 import { API_URL } from '../config/api';
 import { INTENTS, INDUSTRIES } from '../config/onboarding';
 import ImageUpload from '../components/ImageUpload';
+import ResumeImport from '../components/ResumeImport';
 
 const ROLE_LABELS = {
   student: 'Student',
@@ -163,6 +164,7 @@ const Profile = () => {
                   </div>
                   <div className="space-y-2">
                     <Label>Skills</Label>
+                    <ResumeImport onImported={(data) => Array.isArray(data?.skills) && setFormData((f) => ({ ...f, skills: data.skills }))} />
                     <div className="flex gap-2">
                       <Input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSkill())} placeholder="Add a skill" className="border-slate-300" data-testid="skill-input" />
                       <Button onClick={handleAddSkill} type="button" className="bg-yellow-500 hover:bg-yellow-600 shrink-0" data-testid="add-skill-button">Add</Button>

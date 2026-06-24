@@ -41,6 +41,19 @@ const upload = multer({
   }
 });
 
+// Separate uploader for résumé/CV documents (PDF / DOCX)
+const uploadDocument = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === '.pdf' || ext === '.docx') {
+      return cb(null, true);
+    }
+    cb(new Error('Only PDF or DOCX files are allowed'));
+  }
+});
+
 const uploadToCloudinary = async (filePath, folder = 'social-network') => {
   try {
     const result = await cloudinary.uploader.upload(filePath, {
@@ -62,4 +75,4 @@ const uploadToCloudinary = async (filePath, folder = 'social-network') => {
   }
 };
 
-module.exports = { cloudinary, upload, uploadToCloudinary };
+module.exports = { cloudinary, upload, uploadDocument, uploadToCloudinary };

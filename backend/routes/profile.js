@@ -1,7 +1,10 @@
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const { uploadDocument, uploadToCloudinary } = require('../config/cloudinary');
+const { parseResume } = require('../utils/resumeParser');
 
 router.get('/me', auth, async (req, res) => {
   try {
@@ -110,6 +113,71 @@ router.put('/onboarding', auth, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Failed to save onboarding', message: error.message });
   }
+});
+
+// Import a résumé/CV (PDF/DOCX): parse it, merge extracted skills into the
+// profile, and store the file + parsed data so users don't have to refill.
+router.post('/import-resume', auth, (req, res) => {
+  uploadDocument.single('resume')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No résumé file provided' });
+
+    try {
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      const fileType = ext === '.pdf' ? 'pdf' : 'docx';
+      const parsed = await parseResume(req.file.path, fileType);
+
+      const user = await User.findById(req.userId);
+
+      // Merge extracted skills into existing (case-insensitive dedupe, cap 30)
+      const merged = [...(user.skills || [])];
+      const seen = new Set(merged.map((s) => s.toLowerCase()));
+      for (const s of parsed.skills || []) {
+        if (s && !seen.has(s.toLowerCase())) {
+          merged.push(s);
+          seen.add(s.toLowerCase());
+        }
+      }
+      user.skills = merged.slice(0, 30);
+
+      // Best-effort: store the original file in Cloudinary (also frees the temp file)
+      let resumeUrl = '';
+      try {
+        const uploaded = await uploadToCloudinary(req.file.path, 'resumes');
+        resumeUrl = uploaded.url;
+      } catch (_) {
+        /* cloudinary not configured — skip storing the file */
+      }
+
+      user.resume = {
+        url: resumeUrl,
+        fileName: req.file.originalname,
+        parsedData: {
+          skills: parsed.skills || [],
+          experience: parsed.experience,
+          education: parsed.education || [],
+          email: parsed.email,
+          phone: parsed.phone
+        },
+        uploadedAt: new Date()
+      };
+      await user.save();
+
+      res.json({
+        message: 'Résumé imported',
+        skills: user.skills,
+        parsed: {
+          skills: parsed.skills || [],
+          education: parsed.education || [],
+          experience: parsed.experience,
+          phone: parsed.phone
+        }
+      });
+    } catch (e) {
+      console.error('Resume import error:', e);
+      res.status(500).json({ error: 'Failed to import résumé', message: e.message });
+    }
+  });
 });
 
 router.get('/search/users', auth, async (req, res) => {

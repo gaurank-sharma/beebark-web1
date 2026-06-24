@@ -4,11 +4,21 @@ const natural = require('natural');
 const fs = require('fs');
 
 const skillsDatabase = [
-  'JavaScript', 'Python', 'Java', 'React', 'Node.js', 'Angular', 'Vue',
-  'MongoDB', 'PostgreSQL', 'MySQL', 'AWS', 'Azure', 'Docker', 'Kubernetes',
-  'Machine Learning', 'AI', 'Data Science', 'DevOps', 'CI/CD',
-  'HTML', 'CSS', 'TypeScript', 'REST API', 'GraphQL', 'Git',
-  'Agile', 'Scrum', 'Project Management', 'Leadership', 'Communication'
+  // Built environment — design & software
+  'AutoCAD', 'Revit', 'SketchUp', 'Rhino', 'Grasshopper', '3ds Max', 'Lumion',
+  'V-Ray', 'Enscape', 'BIM', 'ArchiCAD', 'Civil 3D', 'Navisworks', 'Tekla',
+  'STAAD Pro', 'ETABS', 'SAP2000', 'Photoshop', 'Illustrator', 'InDesign', 'Figma',
+  // Built environment — disciplines & practice
+  'Architecture', 'Interior Design', 'Urban Design', 'Urban Planning',
+  'Landscape Architecture', 'Structural Engineering', 'MEP', 'HVAC',
+  'Construction Management', 'Project Management', 'Cost Estimation',
+  'Quantity Surveying', 'Site Supervision', 'Sustainability', 'LEED', 'IGBC',
+  'Space Planning', 'Rendering', '3D Modeling', 'Drafting', 'Vastu',
+  'Real Estate', 'Facade Design', 'Lighting Design', 'Furniture Design',
+  // General professional
+  'Leadership', 'Communication', 'Teamwork', 'Client Management', 'Agile', 'Scrum',
+  // Tech (kept for cross-domain résumés)
+  'JavaScript', 'Python', 'Java', 'React', 'Node.js', 'SQL', 'AWS', 'Excel'
 ];
 
 const parseResume = async (filePath, fileType) => {
