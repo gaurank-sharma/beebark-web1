@@ -15,17 +15,13 @@ const Login = () => {
   const { login, googleLogin } = useAuth();
   const navigate = useNavigate();
 
-  const routeAfterAuth = (data) => {
-    navigate(data?.user?.onboardingCompleted === false ? '/onboarding' : '/dashboard');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const data = await login(email.trim(), password, remember);
+      await login(email.trim(), password, remember);
       toast.success('Welcome back!');
-      routeAfterAuth(data);
+      navigate('/dashboard');
     } catch (error) {
       const data = error.response?.data;
       if (error.response?.status === 403 && data?.requiresVerification) {
@@ -43,7 +39,7 @@ const Login = () => {
     try {
       const data = await googleLogin(credential);
       toast.success(data.isNewUser ? 'Welcome to BeeBark!' : 'Welcome back!');
-      routeAfterAuth(data);
+      navigate(data.isNewUser ? '/onboarding' : '/dashboard');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Google sign-in failed');
     }

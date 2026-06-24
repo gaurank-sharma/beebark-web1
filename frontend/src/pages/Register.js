@@ -46,7 +46,7 @@ const Register = () => {
     try {
       const data = await googleLogin(credential);
       toast.success(data.isNewUser ? 'Welcome to BeeBark!' : 'Welcome back!');
-      navigate(data?.user?.onboardingCompleted === false ? '/onboarding' : '/dashboard');
+      navigate(data.isNewUser ? '/onboarding' : '/dashboard');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Google sign-in failed');
     }

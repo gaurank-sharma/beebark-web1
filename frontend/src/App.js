@@ -34,8 +34,8 @@ const PrivateRoute = ({ children }) => {
   }
   
   if (!user) return <Navigate to="/login" />;
-  // Force first-time users through onboarding before the rest of the app
-  if (user.onboardingCompleted === false) return <Navigate to="/onboarding" />;
+  // Onboarding is only routed to right after a new signup — returning/legacy
+  // users are never force-redirected into it.
   return children;
 };
 
